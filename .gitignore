@@ -6,3 +6,5 @@
 *.json
 Demo/*/*
 *.txt
+image_list.csv
+run_commands.txt

@@ -48,7 +48,7 @@ class RealTimeStereo(threading.Thread):
         SSIMTh: float
             reset the network to the initial configuration if current SSIM > SSIMTh
         mode: string
-            nline adaptation mode: NONE - perform only inference, FULL - full online backprop, MAD - backprop only on portions of the network
+            online adaptation mode: NONE - perform only inference, FULL - full online backprop, MAD - backprop only on portions of the network
         """
         self._camera_buffer = camera_buffer
         self._model_name = model_name

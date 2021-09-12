@@ -102,18 +102,18 @@ import pyzed.sl as sl
 class ZEDMini(ImageGrabber):
     _name = 'ZED_Mini'
     _key_to_res = {
-        '2K' : sl.RESOLUTION.RESOLUTION_HD2K,
-        '1080p' : sl.RESOLUTION.RESOLUTION_HD1080,
-        '720p' : sl.RESOLUTION.RESOLUTION_HD720,
-        'VGA' : sl.RESOLUTION.RESOLUTION_VGA
+        '2K' : sl.RESOLUTION.HD2K,
+        '1080p' : sl.RESOLUTION.HD1080,
+        '720p' : sl.RESOLUTION.HD720,
+        'VGA' : sl.RESOLUTION.VGA
     }
 
     """ Read Stereo frames from a ZED Mini stereo camera. """
     def _read_frame(self):
         err = self._cam.grab(self._runtime)
         if err == sl.ERROR_CODE.SUCCESS:
-            self._cam.retrieve_image(self._left_frame, sl.VIEW.VIEW_LEFT)
-            self._cam.retrieve_image(self._right_frame, sl.VIEW.VIEW_RIGHT)
+            self._cam.retrieve_image(self._left_frame, sl.VIEW.LEFT)
+            self._cam.retrieve_image(self._right_frame, sl.VIEW.RIGHT)
             return self._left_frame.get_data()[:,:,:3], self._right_frame.get_data()[:,:,:3]
     
     def _connect_to_camera(self):
@@ -126,7 +126,7 @@ class ZEDMini(ImageGrabber):
         if 'resolution' in self._config:
             self._params.camera_resolution = self._key_to_res[self._config['resolution']]
         else:
-            self._params.camera_resolution = sl.RESOLUTION.RESOLUTION_HD720
+            self._params.camera_resolution = sl.RESOLUTION.HD720
         
         if 'fps' in self._config:
             self._params.camera_fps = self._config['fps']
@@ -144,6 +144,64 @@ class ZEDMini(ImageGrabber):
 
     def _disconnect_from_camera(self):
         self._cam.close()        
+
+
+#########################################################################
+#################           ZED 2                    #################
+#########################################################################
+
+import pyzed.sl as sl
+
+@register_camera_to_factory()
+class ZED_2(ImageGrabber):
+    _name = 'ZED_2'
+    _key_to_res = {
+        '2K' : sl.RESOLUTION.HD2K,
+        '1080p' : sl.RESOLUTION.HD1080,
+        '720p' : sl.RESOLUTION.HD720,
+        'VGA' : sl.RESOLUTION.VGA
+    }
+
+    """ Read Stereo frames from a ZED 2 stereo camera. """
+    def _read_frame(self):
+        err = self._cam.grab(self._runtime)
+        if err == sl.ERROR_CODE.SUCCESS:
+            self._cam.retrieve_image(self._left_frame, sl.VIEW.LEFT)
+            self._cam.retrieve_image(self._right_frame, sl.VIEW.RIGHT)
+            return self._left_frame.get_data()[:,:,:3], self._right_frame.get_data()[:,:,:3]
+    
+    def _connect_to_camera(self):
+        # road option from config file
+        with open(self._config) as f_in:
+            self._config = json.load(f_in)
+
+        self._params = sl.InitParameters()
+        
+        if 'resolution' in self._config:
+            self._params.camera_resolution = self._key_to_res[self._config['resolution']]
+        else:
+            self._params.camera_resolution = sl.RESOLUTION.HD720
+        
+        if 'fps' in self._config:
+            self._params.camera_fps = self._config['fps']
+        else:
+            self._params.camera_fps = 15
+        
+        self._cam = sl.Camera()
+        status = self._cam.open(self._params)
+        if status != sl.ERROR_CODE.SUCCESS:
+            print(status)
+            raise Exception('Unable to connect to Stereo Camera')
+        self._runtime = sl.RuntimeParameters()
+        self._left_frame = sl.Mat()
+        self._right_frame = sl.Mat()
+
+    def _disconnect_from_camera(self):
+        self._cam.close() 
+
+
+
+
 
 
 #########################################################################

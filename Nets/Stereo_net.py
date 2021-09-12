@@ -53,9 +53,9 @@ class StereoNet(object):
 
     def _add_to_layers(self, name, op):
         """
-        Add the layer to the network ones and check if name is among the layer where the network should split, if so create a placeholder and return it, otherways return the real layer. Add teh variables to the trainable colelction 
+        Add the layer to the network ones and check if name is among the layer where the network should split, if so create a placeholder and return it, otherways return the real layer. Add the variables to the trainable collection 
         Args:
-            name: name of the layer that need to be addded to the network collection
+            name: name of the layer that need to be added to the network collection
             op: tensorflow op 
         """
         self._layers[name] = op
