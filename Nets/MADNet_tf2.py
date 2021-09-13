@@ -152,24 +152,50 @@ class StereoEstimator(tf.keras.layers.Layer):
 #     interpolated = array_ops.reshape(interpolated, [batch_size, height, width, channels])
 #     return interpolated
 
-def _build_indeces(coords):
-    batches, height, width, channels = coords.get_shape().as_list()
+class BuildIndices(tf.keras.layers.Layer):
 
-    pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
-    batches_coords = np.ones((batches, height, width, 1), dtype=np.float32)
+    def __init__(self, name="build_indices"):
+        super(BuildIndices, self).__init__(name=name)
 
-    for i in range(0, batches):
-        batches_coords[i][:][:][:] = i
-    # build pixel coordinates and their disparity
-    for i in range(0, height):
-        for j in range(0, width):
-            pixel_coords[0][i][j][0] = j
-            pixel_coords[0][i][j][1] = i
+    def call(self, coords):
 
-    pixel_coords = tf.constant(pixel_coords, tf.float32)
-    output = tf.concat([batches_coords, pixel_coords + coords], -1)
+        batches, height, width, channels = coords.get_shape().as_list()
 
-    return output
+        pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
+        batches_coords = np.ones((batches, height, width, 1), dtype=np.float32)
+
+        for i in range(0, batches):
+            batches_coords[i][:][:][:] = i
+        # build pixel coordinates and their disparity
+        for i in range(0, height):
+            for j in range(0, width):
+                pixel_coords[0][i][j][0] = j
+                pixel_coords[0][i][j][1] = i
+
+        pixel_coords = tf.constant(pixel_coords, tf.float32)
+        output = tf.concat([batches_coords, pixel_coords + coords], -1)            
+
+        return output
+
+
+# def _build_indeces(coords):
+#     batches, height, width, channels = coords.get_shape().as_list()
+
+#     pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
+#     batches_coords = np.ones((batches, height, width, 1), dtype=np.float32)
+
+#     for i in range(0, batches):
+#         batches_coords[i][:][:][:] = i
+#     # build pixel coordinates and their disparity
+#     for i in range(0, height):
+#         for j in range(0, width):
+#             pixel_coords[0][i][j][0] = j
+#             pixel_coords[0][i][j][1] = i
+
+#     pixel_coords = tf.constant(pixel_coords, tf.float32)
+#     output = tf.concat([batches_coords, pixel_coords + coords], -1)
+
+#     return output
 
 
 class Warp(tf.keras.layers.Layer):
@@ -212,7 +238,27 @@ class Warp(tf.keras.layers.Layer):
 
         return output
 
+class StereoContextNetwork(tf.keras.layers.Layer):
 
+    def __init__(self, name="residual_refinement_network"):
+        super(StereoContextNetwork, self).__init__(name=name)
+
+    def call(self, input, disp):
+
+        volume = tf.keras.layers.concatenate([input, disp], axis=-1)
+
+
+        context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context1")(volume)
+        context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=2, padding="same", activation=act, use_bias=True, name="context2")(context)
+        context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=4, padding="same", activation=act, use_bias=True, name="context3")(context)
+        context = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), dilation_rate=8, padding="same", activation=act, use_bias=True, name="context4")(context)
+        context = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), dilation_rate=16, padding="same", activation=act, use_bias=True, name="context5")(context)
+        context = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context6")(context)
+        context = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation=None, use_bias=True, name="context7")(context)
+
+        final_disp = tf.keras.layers.add([disp, context], name="final_disp")
+
+        return final_disp
 
 
 
@@ -233,7 +279,7 @@ height_5, width_5 = (left_F5.shape.as_list()[1], left_F5.shape.as_list()[2])
 u5 = tf.keras.layers.Resizing(height=height_5, width=width_5, interpolation='bilinear')(V6)
 # Get warped right image
 coords5 = tf.keras.layers.concatenate([u5, tf.zeros_like(u5)], -1)
-indices_5 = _build_indeces(coords5)
+indices_5 = BuildIndices(name="build_indices5")(coords5)
 warp_5 = Warp(name="warp_5")(right_F5, indices_5)
 # Get the disparity
 disp_v5 = StereoCostVolume(name="cost_5")(left_F5, warp_5, search_range)
@@ -246,7 +292,7 @@ height_4, width_4 = (left_F4.shape.as_list()[1], left_F4.shape.as_list()[2])
 u4 = tf.keras.layers.Resizing(height=height_4, width=width_4, interpolation='bilinear')(V5)
 # Get warped right image
 coords4 = tf.keras.layers.concatenate([u4, tf.zeros_like(u4)], -1)
-indices_4 = _build_indeces(coords4)
+indices_4 = BuildIndices(name="build_indices4")(coords4)
 warp_4 = Warp(name="warp_4")(right_F4, indices_4)
 # Get the disparity
 disp_v4 = StereoCostVolume(name="cost_4")(left_F4, warp_4, search_range)
@@ -259,7 +305,7 @@ height_3, width_3 = (left_F3.shape.as_list()[1], left_F3.shape.as_list()[2])
 u3 = tf.keras.layers.Resizing(height=height_3, width=width_3, interpolation='bilinear')(V4)
 # Get warped right image
 coords3 = tf.keras.layers.concatenate([u3, tf.zeros_like(u3)], -1)
-indices_3 = _build_indeces(coords3)
+indices_3 = BuildIndices(name="build_indices3")(coords3)
 warp_3 = Warp(name="warp_3")(right_F3, indices_3)
 # Get the disparity
 disp_v3 = StereoCostVolume(name="cost_3")(left_F3, warp_3, search_range)
@@ -272,21 +318,23 @@ height_2, width_2 = (left_F2.shape.as_list()[1], left_F2.shape.as_list()[2])
 u2 = tf.keras.layers.Resizing(height=height_2, width=width_2, interpolation='bilinear')(V3)
 # Get warped right image
 coords2 = tf.keras.layers.concatenate([u2, tf.zeros_like(u2)], -1)
-indices_2 = _build_indeces(coords2)
+indices_2 = BuildIndices(name="build_indices2")(coords2)
 warp_2 = Warp(name="warp_2")(right_F2, indices_2)
 # Get the disparity
 disp_v2 = StereoCostVolume(name="cost_2")(left_F2, warp_2, search_range)
-V2 = StereoEstimator(name="volume_filtering_2")(disp_v2, u2)
+V2_init = StereoEstimator(name="volume_filtering_2")(disp_v2, u2)
+
+
+V2 = StereoContextNetwork()(input=left_F2, disp=V2_init)
+
+
+rescaled_prediction = tf.keras.layers.Resizing(height=image_height, width=image_width, interpolation='bilinear', name="rescaled_prediction")(V2)
 
 
 
 
 
-
-
-
-
-MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=disparity, name="MADNet")
+MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=rescaled_prediction, name="MADNet")
 
 
 MADNet.summary()
