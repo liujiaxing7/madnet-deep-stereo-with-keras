@@ -12,57 +12,7 @@ image_width = 1216
 input_size = (image_height, image_width)
 batch_size = 1 # Set batch size to none to have a variable batch size
 
-
-# ------------------------------------------------------------------------
-# Model Creation
-# Left and right image inputs
-left_input = tf.keras.Input(shape=(image_height, image_width, 3, ), batch_size=batch_size, name="left_image_input", dtype=tf.float32)
-right_input = tf.keras.Input(shape=(image_height, image_width, 3, ), batch_size=batch_size, name="right_image_input", dtype=tf.float32)
-
-#######################PYRAMID FEATURES###############################
-act = tf.keras.layers.Activation(tf.nn.leaky_relu)
-# Left image feature pyramid (feature extractor)
-# F1
-left_pyramid = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv1")(left_input)
-left_F1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv2")(left_pyramid)
-# F2
-left_pyramid = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv3")(left_F1)
-left_F2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv4")(left_pyramid)
-# F3
-left_pyramid = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv5")(left_F2)
-left_F3 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv6")(left_pyramid)
-# F4
-left_pyramid = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv7")(left_F3)
-left_F4 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv8")(left_pyramid)
-# F5
-left_pyramid = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv9")(left_F4)
-left_F5 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv10")(left_pyramid)
-# F6
-left_pyramid = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv11")(left_F5)
-left_F6 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv12")(left_pyramid)
-
-
-# Right image feature pyramid (feature extractor)
-# F1
-right_pyramid = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv1")(right_input)
-right_F1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv2")(right_pyramid)
-# F2
-right_pyramid = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv3")(right_F1)
-right_F2 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv4")(right_pyramid)
-# F3
-right_pyramid = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv5")(right_F2)
-right_F3 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv6")(right_pyramid)
-# F4
-right_pyramid = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv7")(right_F3)
-right_F4 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv8")(right_pyramid)
-# F5
-right_pyramid = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv9")(right_F4)
-right_F5 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv10")(right_pyramid)
-# F6
-right_pyramid = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv11")(right_F5)
-right_F6 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv12")(right_pyramid)
-
-
+search_range = 2 # maximum dispacement (ie. smallest disparity)
 
 # https://github.com/philferriere/tfoptflow/blob/bdc7a72e78008d1cd6db46e4667dffc2bab1fe9e/tfoptflow/core_costvol.py
 class StereoCostVolume(tf.keras.layers.Layer):
@@ -96,73 +46,6 @@ class StereoCostVolume(tf.keras.layers.Layer):
         cost_curve = tf.concat([c1, cost_vol], axis=3)
         return cost_curve
 
-
-# class StereoEstimator(tf.keras.layers.Layer):
-
-#     def __init__(self, name="volume_filtering"):
-#         super(StereoEstimator, self).__init__(name=name)
-#         self.disp = None
-
-#     def call(self, costs, upsampled_disp=None):
-#         if upsampled_disp is not None:
-#             volume = tf.keras.layers.concatenate([costs, upsampled_disp], axis=-1)
-#         else:
-#             volume = costs
-#         # Need to check if disp was created previously,
-#         # so variable doesnt get created multiple times (for autograph)
-#         if self.disp is None:
-#             self.disp = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")(volume)
-#             self.disp = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")(self.disp)
-#             self.disp = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp3")(self.disp)
-#             self.disp = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp4")(self.disp)
-#             self.disp = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp5")(self.disp)
-#             self.disp = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), strides=1, padding="same", activation="linear", use_bias=True, name="disp6")(self.disp)
-
-#         return self.disp
-
-
-
-
-# # https://github.com/philferriere/tfoptflow/blob/bdc7a72e78008d1cd6db46e4667dffc2bab1fe9e/tfoptflow/core_warp.py
-# def dense_image_warp(image, flow, name='dense_image_warp'):
-#     """Image warping using per-pixel flow vectors.
-#     Apply a non-linear warp to the image, where the warp is specified by a dense
-#     flow field of offset vectors that define the correspondences of pixel values
-#     in the output image back to locations in the  source image. Specifically, the
-#     pixel value at output[b, j, i, c] is
-#     images[b, j - flow[b, j, i, 0], i - flow[b, j, i, 1], c].
-#     The locations specified by this formula do not necessarily map to an int
-#     index. Therefore, the pixel value is obtained by bilinear
-#     interpolation of the 4 nearest pixels around
-#     (b, j - flow[b, j, i, 0], i - flow[b, j, i, 1]). For locations outside
-#     of the image, we use the nearest pixel values at the image boundary.
-#     Args:
-#       image: 4-D float `Tensor` with shape `[batch, height, width, channels]`.
-#       flow: A 4-D float `Tensor` with shape `[batch, height, width, 2]`.
-#       name: A name for the operation (optional).
-#       Note that image and flow can be of type tf.half, tf.float32, or tf.float64,
-#       and do not necessarily have to be the same type.
-#     Returns:
-#       A 4-D float `Tensor` with shape`[batch, height, width, channels]`
-#         and same type as input image.
-#     Raises:
-#       ValueError: if height < 2 or width < 2 or the inputs have the wrong number
-#                   of dimensions.
-#     """
-
-#     batch_size, height, width, channels = array_ops.unstack(array_ops.shape(image))
-#     # The flow is defined on the image grid. Turn the flow into a list of query
-#     # points in the grid space.
-#     grid_x, grid_y = array_ops.meshgrid(math_ops.range(width), math_ops.range(height))
-#     stacked_grid = math_ops.cast(array_ops.stack([grid_y, grid_x], axis=2), flow.dtype)
-#     batched_grid = array_ops.expand_dims(stacked_grid, axis=0)
-#     query_points_on_grid = batched_grid - flow
-#     query_points_flattened = array_ops.reshape(query_points_on_grid, [batch_size, height * width, 2])
-#     # Compute values at the query points, then reshape the result back to the
-#     # image grid.
-#     interpolated = _interpolate_bilinear(image, query_points_flattened)
-#     interpolated = array_ops.reshape(interpolated, [batch_size, height, width, channels])
-#     return interpolated
 
 class BuildIndices(tf.keras.layers.Layer):
 
@@ -230,34 +113,12 @@ class Warp(tf.keras.layers.Layer):
 
         return output
 
-# class StereoContextNetwork(tf.keras.Model):
-
-#     def __init__(self, name="residual_refinement_network"):
-#         super(StereoContextNetwork, self).__init__(name=name)
-#         self.context = None
-
-#     def call(self, input, disp):
-
-#         volume = tf.keras.layers.concatenate([input, disp], axis=-1)
-#         # Need to check if context was created previously,
-#         # so variable doesnt get created multiple times (for autograph)
-#         if self.context is None:
-#             self.context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context1")(volume)
-#             self.context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=2, padding="same", activation=act, use_bias=True, name="context2")(self.context)
-#             self.context = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=4, padding="same", activation=act, use_bias=True, name="context3")(self.context)
-#             self.context = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), dilation_rate=8, padding="same", activation=act, use_bias=True, name="context4")(self.context)
-#             self.context = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), dilation_rate=16, padding="same", activation=act, use_bias=True, name="context5")(self.context)
-#             self.context = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context6")(self.context)
-#             self.context = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation="linear", use_bias=True, name="context7")(self.context)
-
-#         final_disp = tf.keras.layers.add([disp, self.context], name="final_disp")
-
-#         return final_disp
 
 class StereoContextNetwork(tf.keras.Model):
 
     def __init__(self, name="residual_refinement_network"):
         super(StereoContextNetwork, self).__init__(name=name)
+        act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         self.x = None
         self.context1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context1")
         self.context2 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=2, padding="same", activation=act, use_bias=True, name="context2")
@@ -298,6 +159,7 @@ class StereoEstimator(tf.keras.Model):
 
     def __init__(self, name="volume_filtering"):
         super(StereoEstimator, self).__init__(name=name)
+        act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         self.x = None
         self.disp1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")
         self.disp2 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")
@@ -376,34 +238,163 @@ class ModuleM(tf.keras.Model):
 
 
 
+# ------------------------------------------------------------------------
+# Model Creation
+class MADNet(tf.keras.Model):
+    """
+    The main MADNet model
+    """
+    def __init__(self, name="MADNet", height=320, width=1216, search_range=2):
+        super(MADNet, self).__init__(name=name)
+        self.height = height
+        self.width = width
+        self.batch_size = batch_size
+        self.search_range = search_range
 
-search_range = 2 # maximum dispacement
+        act = tf.keras.layers.Activation(tf.nn.leaky_relu)
+        # Left image feature pyramid (feature extractor)
+        self.left_pyramid = None
+        # F1
+        self.left_conv1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv1", 
+        input_shape=(self.height, self.width, 3, ))
+        self.left_conv2 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv2")
+        # F2
+        self.left_conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv3")
+        self.left_conv4 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv4")
+        # F3
+        self.left_conv5 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv5")
+        self.left_conv6 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv6")
+        # F4
+        self.left_conv7 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv7")
+        self.left_conv8 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv8")
+        # F5
+        self.left_conv9 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv9")
+        self.left_conv10 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv10")
+        # F6
+        self.left_conv11 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv11")
+        self.left_conv12 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv12")       
+        # Right image feature pyramid (feature extractor)
+        self.right_pyramid = None
+        # F1
+        self.right_conv1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv1", 
+        input_shape=(self.height, self.width, 3, ))
+        self.right_conv2 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv2")
+        # F2
+        self.right_conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv3")
+        self.right_conv4 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv4")
+        # F3
+        self.right_conv5 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv5")
+        self.right_conv6 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv6")
+        # F4
+        self.right_conv7 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv7")
+        self.right_conv8 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv8")
+        # F5
+        self.right_conv9 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv9")
+        self.right_conv10 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv10")
+        # F6
+        self.right_conv11 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv11")
+        self.right_conv12 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv12")
 
-#############################SCALE 6#################################
-M6 = ModuleM(name="M6", layer="6", search_range=search_range)(left_F6, right_F6)
-
-############################SCALE 5###################################
-M5 = ModuleM(name="M5", layer="5", search_range=search_range)(left_F5, right_F5, M6)
-
-############################SCALE 4###################################
-M4 = ModuleM(name="M4", layer="4", search_range=search_range)(left_F4, right_F4, M5)
-
-############################SCALE 3###################################
-M3 = ModuleM(name="M3", layer="3", search_range=search_range)(left_F3, right_F3, M4)
-
-############################SCALE 2###################################
-M2 = ModuleM(name="M2", layer="2", search_range=search_range)(left_F2, right_F2, M3, True)
+        #############################SCALE 6#################################
+        self.M6 = ModuleM(name="M6", layer="6", search_range=self.search_range)
+        ############################SCALE 5###################################
+        self.M5 = ModuleM(name="M5", layer="5", search_range=self.search_range)
+        ############################SCALE 4###################################
+        self.M4 = ModuleM(name="M4", layer="4", search_range=self.search_range)
+        ############################SCALE 3###################################
+        self.M3 = ModuleM(name="M3", layer="3", search_range=self.search_range)
+        ############################SCALE 2###################################
+        self.M2 = ModuleM(name="M2", layer="2", search_range=self.search_range)
 
 
 
-MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=M2, name="MADNet")
+
+    # Forward pass of the model
+    def call(self, inputs):
+        # # Left and right image inputs
+        # left_input = tf.keras.Input(shape=(self.height, self.width, 3, ), batch_size=self.batch_size, name="left_image_input", dtype=tf.float32)
+        # right_input = tf.keras.Input(shape=(self.height, self.width, 3, ), batch_size=self.batch_size, name="right_image_input", dtype=tf.float32)
+        left_input, right_input = inputs
+
+        #######################PYRAMID FEATURES###############################
+        # Left image feature pyramid (feature extractor)
+        if self.left_pyramid is None:
+            # F1
+            self.left_pyramid = self.left_conv1(left_input)
+            left_F1 = self.left_conv2(self.left_pyramid)
+            # F2
+            self.left_pyramid = self.left_conv3(left_F1)
+            left_F2 = self.left_conv4(self.left_pyramid)
+            # F3
+            self.left_pyramid = self.left_conv5(left_F2)
+            left_F3 = self.left_conv6(self.left_pyramid)
+            # F4
+            self.left_pyramid = self.left_conv7(left_F3)
+            left_F4 = self.left_conv8(self.left_pyramid)
+            # F5
+            self.left_pyramid = self.left_conv9(left_F4)
+            left_F5 = self.left_conv10(self.left_pyramid)
+            # F6
+            self.left_pyramid = self.left_conv11(left_F5)
+            left_F6 = self.left_conv12(self.left_pyramid)
 
 
-MADNet.compile(
+        # Right image feature pyramid (feature extractor)
+        if self.right_pyramid is None:
+            # F1
+            self.right_pyramid = self.right_conv1(right_input)
+            right_F1 = self.right_conv2(self.right_pyramid)
+            # F2
+            self.right_pyramid = self.right_conv3(right_F1)
+            right_F2 = self.right_conv4(self.right_pyramid)
+            # F3
+            self.right_pyramid = self.right_conv5(right_F2)
+            right_F3 = self.right_conv6(self.right_pyramid)
+            # F4
+            self.right_pyramid = self.right_conv7(right_F3)
+            right_F4 = self.right_conv8(self.right_pyramid)
+            # F5
+            self.right_pyramid = self.right_conv9(right_F4)
+            right_F5 = self.right_conv10(self.right_pyramid)
+            # F6
+            self.right_pyramid = self.right_conv11(right_F5)
+            right_F6 = self.right_conv12(self.right_pyramid)
+
+
+        losses = {}
+        #############################SCALE 6#################################
+        D6 = self.M6(left_F6, right_F6)
+        losses["D6"] = D6.losses
+        self.add_loss(losses["D6"])
+        ############################SCALE 5###################################
+        D5 = self.M5(left_F5, right_F5, D6)
+        losses["D5"] = D5.losses
+        self.add_loss(losses["D5"])        
+        ############################SCALE 4###################################
+        D4 = self.M4(left_F4, right_F4, D5)
+        losses["D4"] = D4.losses     
+        self.add_loss(losses["D4"])   
+        ############################SCALE 3###################################
+        D3 = self.M3(left_F3, right_F3, D4)
+        losses["D3"] = D3.losses     
+        self.add_loss(losses["D3"])   
+        ############################SCALE 2###################################
+        D2 = self.M2(left_F2, right_F2, D3, True)
+        losses["D2"] = D2.losses  
+        self.add_loss(losses["D2"])      
+
+        return D2
+
+model = MADNet()
+
+# MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=M2, name="MADNet")
+
+
+model.compile(
     optimizer='adam'
 )
 
-MADNet.summary()
+#model.summary()
 #tf.keras.utils.plot_model(MADNet, "./images/MADNet Model Structure.png", show_layer_names=True)
 
 
@@ -461,7 +452,7 @@ steps_per_epoch = math.ceil(left_generator.samples / batch_size)
 # ---------------------------------------------------------------------------
 # Train the model
 
-history = MADNet.fit(
+history = model.fit(
     x=generator(left_generator, right_generator),
     batch_size=batch_size,
     epochs=1,
