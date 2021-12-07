@@ -76,9 +76,9 @@ class StereoCostVolume(tf.keras.layers.Layer):
         super(StereoCostVolume, self).__init__(name=name)
 
     def call(self, c1, warp, search_range):
-        # # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
-        # reprojection_loss = mean_SSIM_L1(warp, c1)
-        # self.add_loss(reprojection_loss)
+        # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
+        reprojection_loss = mean_SSIM_L1(warp, c1)
+        self.add_loss(reprojection_loss)
 
         padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
         width = c1.shape.as_list()[2]
@@ -287,14 +287,6 @@ class StereoContextNetwork(tf.keras.Model):
 
 
 class StereoEstimator(tf.keras.Model):
-    """
-    This is the stereo estimation network at resolution n.
-    It uses the costs (from the pixel difference between the warped right image 
-    and the left image) combined with the upsampled disparity from the previous
-    layer (when the layer is not the last layer).
-
-    The output is predicted disparity for the network at resolution n.
-    """
 
     def __init__(self, name="volume_filtering"):
         super(StereoEstimator, self).__init__(name=name)
@@ -322,89 +314,86 @@ class StereoEstimator(tf.keras.Model):
             x = self.disp6(x)
         return x
 
-
-class ModuleM(tf.keras.Model):
-    """
-    Module MX is a sub-module of MADNet, which can be trained individually for 
-    online adaptation using the MAD (Modular ADaptaion) method.
-    """
-    def __init__(self, name="MX", layer="X", search_range=2):
-        super(ModuleM, self).__init__(name=name)
-        self.module_disparity = None
-        self.final_disparity = None
-        self.context_disparity = None
-        self.search_range = search_range
-        self.layer = layer
-        self.cost_volume = StereoCostVolume(name=f"cost_{layer}")
-        self.stereo_estimator = StereoEstimator(name=f"volume_filtering_{layer}")
-        self.context_network = StereoContextNetwork()
-
-    def call(self, left, right, prev_disp=None, is_final_module=False):
-
-        height, width = (left.shape.as_list()[1], left.shape.as_list()[2])
-        # Check if module disparity was previously calculated to prevent retracing (for autograph)
-        if self.module_disparity is not None:
-            # Check if layer is the bottom of the pyramid
-            if prev_disp is not None:
-                # Upsample disparity from previous layer
-                upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{self.layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
-                coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
-                indices = BuildIndices(name=f"build_indices_{self.layer}")(coords)
-                # Warp the right image into the left using upsampled disparity
-                warped_left = Warp(name=f"warp_{self.layer}")(right, indices)
-            else:
-                # No previous disparity exits, so use right image instead of warped left
-                warped_left = right
-
-            # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
-            reprojection_loss = mean_SSIM_L1(warped_left, left)
-            self.add_loss(reprojection_loss)
-
-            costs = self.cost_volume(left, warped_left, self.search_range)
-            # Get the disparity using cost volume between left and warped left images
-            self.module_disparity = self.stereo_estimator(costs)
-
-        # Add the residual refinement network to the final layer
-        # also check if disparity was created previously (for autograph)
-        if is_final_module and self.final_disparity is not None:
-            self.context_disparity = self.context_network(left, self.module_disparity)
-            self.final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=height, width=width, interpolation='bilinear')(self.context_disparity)
-
-
-        return self.final_disparity if is_final_module else self.module_disparity
-
-
-
-
-
 search_range = 2 # maximum dispacement
 
 #############################SCALE 6#################################
-M6 = ModuleM(name="M6", layer="6", search_range=search_range)(left_F6, right_F6)
+# Get the disparity
+disp_v6 = StereoCostVolume(name="cost_6")(left_F6, right_F6, search_range)
+V6 = StereoEstimator(name="volume_filtering_6")(disp_v6)
+
 
 ############################SCALE 5###################################
-M5 = ModuleM(name="M5", layer="5", search_range=search_range)(left_F5, right_F5, M6)
+# Upsample disparity from previous layer
+height_5, width_5 = (left_F5.shape.as_list()[1], left_F5.shape.as_list()[2])
+u5 = tf.keras.layers.Resizing(name="u5", height=height_5, width=width_5, interpolation='bilinear')(V6)
+# Get warped right image
+coords5 = tf.keras.layers.concatenate([u5, tf.zeros_like(u5)], -1)
+indices_5 = BuildIndices(name="build_indices5")(coords5)
+warp_5 = Warp(name="warp_5")(right_F5, indices_5)
+# Get the disparity
+disp_v5 = StereoCostVolume(name="cost_5")(left_F5, warp_5, search_range)
+V5 = StereoEstimator(name="volume_filtering_5")(disp_v5, u5)
+
 
 ############################SCALE 4###################################
-M4 = ModuleM(name="M4", layer="4", search_range=search_range)(left_F4, right_F4, M5)
+# Upsample disparity from previous layer
+height_4, width_4 = (left_F4.shape.as_list()[1], left_F4.shape.as_list()[2])
+u4 = tf.keras.layers.Resizing(name="u4", height=height_4, width=width_4, interpolation='bilinear')(V5)
+# Get warped right image
+coords4 = tf.keras.layers.concatenate([u4, tf.zeros_like(u4)], -1)
+indices_4 = BuildIndices(name="build_indices4")(coords4)
+warp_4 = Warp(name="warp_4")(right_F4, indices_4)
+# Get the disparity
+disp_v4 = StereoCostVolume(name="cost_4")(left_F4, warp_4, search_range)
+V4 = StereoEstimator(name="volume_filtering_4")(disp_v4, u4)
+
 
 ############################SCALE 3###################################
-M3 = ModuleM(name="M3", layer="3", search_range=search_range)(left_F3, right_F3, M4)
+# Upsample disparity from previous layer
+height_3, width_3 = (left_F3.shape.as_list()[1], left_F3.shape.as_list()[2])
+u3 = tf.keras.layers.Resizing(name="u3", height=height_3, width=width_3, interpolation='bilinear')(V4)
+# Get warped right image
+coords3 = tf.keras.layers.concatenate([u3, tf.zeros_like(u3)], -1)
+indices_3 = BuildIndices(name="build_indices3")(coords3)
+warp_3 = Warp(name="warp_3")(right_F3, indices_3)
+# Get the disparity
+disp_v3 = StereoCostVolume(name="cost_3")(left_F3, warp_3, search_range)
+V3 = StereoEstimator(name="volume_filtering_3")(disp_v3, u3)
+
 
 ############################SCALE 2###################################
-M2 = ModuleM(name="M2", layer="2", search_range=search_range)(left_F2, right_F2, M3, True)
+# Upsample disparity from previous layer
+height_2, width_2 = (left_F2.shape.as_list()[1], left_F2.shape.as_list()[2])
+u2 = tf.keras.layers.Resizing(name="u2", height=height_2, width=width_2, interpolation='bilinear')(V3)
+# Get warped right image
+coords2 = tf.keras.layers.concatenate([u2, tf.zeros_like(u2)], -1)
+indices_2 = BuildIndices(name="build_indices2")(coords2)
+warp_2 = Warp(name="warp_2")(right_F2, indices_2)
+# Get the disparity
+disp_v2 = StereoCostVolume(name="cost_2")(left_F2, warp_2, search_range)
+V2_init = StereoEstimator(name="volume_filtering_2")(disp_v2, u2)
+
+
+V2 = StereoContextNetwork()(input=left_F2, disp=V2_init)
+
+
+rescaled_prediction = tf.keras.layers.Resizing(name="rescaled_prediction", height=image_height, width=image_width, interpolation='bilinear')(V2)
 
 
 
-MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=M2, name="MADNet")
+
+
+MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=rescaled_prediction, name="MADNet")
 
 
 MADNet.compile(
     optimizer='adam'
 )
 
+
+
 MADNet.summary()
-#tf.keras.utils.plot_model(MADNet, "./images/MADNet Model Structure.png", show_layer_names=True)
+tf.keras.utils.plot_model(MADNet, "./images/MADNet Model Structure.png", show_layer_names=True)
 
 
 # --------------------------------------------------------------------------------
