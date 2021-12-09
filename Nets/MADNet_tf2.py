@@ -118,6 +118,7 @@ class StereoContextNetwork(tf.keras.Model):
 
     def __init__(self, name="residual_refinement_network"):
         super(StereoContextNetwork, self).__init__(name=name)
+        print(f"\nStarted Initialization context network")
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         self.x = None
         self.context1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context1")
@@ -129,21 +130,26 @@ class StereoContextNetwork(tf.keras.Model):
         self.context7 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation="linear", use_bias=True, name="context7")
 
     def call(self, input, disp):
-
+        print(f"\nStarted call context network")
         volume = tf.keras.layers.concatenate([input, disp], axis=-1)
+
+        print(f"input: {input.shape}")
+        print(f"disp: {disp.shape}")
+        print(f"volume: {volume.shape}")
+
         # Need to check if context was created previously,
         # so variable doesnt get created multiple times (for autograph)
-        if self.x is None:
-            self.x = self.context1(volume)
-            self.x = self.context2(self.x)
-            self.x = self.context3(self.x)
-            self.x = self.context4(self.x)
-            self.x = self.context5(self.x)
-            self.x = self.context6(self.x)
-            self.x = self.context7(self.x)
+        #if self.x is None:
+        self.x = self.context1(volume)
+        self.x = self.context2(self.x)
+        self.x = self.context3(self.x)
+        self.x = self.context4(self.x)
+        self.x = self.context5(self.x)
+        self.x = self.context6(self.x)
+        self.x = self.context7(self.x)
 
         final_disp = tf.keras.layers.add([disp, self.x], name="final_disp")
-
+        print(f"final_disp: {final_disp.shape}")
         return final_disp
 
 
@@ -175,13 +181,13 @@ class StereoEstimator(tf.keras.Model):
             volume = costs
         # Need to check if disp was created previously,
         # so variable doesnt get created multiple times (for autograph)
-        if self.x is None:
-            x = self.disp1(volume)
-            x = self.disp2(x)
-            x = self.disp3(x)
-            x = self.disp4(x)
-            x = self.disp5(x)
-            x = self.disp6(x)
+        #if self.x is None:
+        x = self.disp1(volume)
+        x = self.disp2(x)
+        x = self.disp3(x)
+        x = self.disp4(x)
+        x = self.disp5(x)
+        x = self.disp6(x)
         return x
 
 
@@ -191,6 +197,7 @@ class ModuleM(tf.keras.Model):
     online adaptation using the MAD (Modular ADaptaion) method.
     """
     def __init__(self, name="MX", layer="X", search_range=2):
+        print(f"\nStarted Initialization ModuleM {layer}")
         super(ModuleM, self).__init__(name=name)
         self.module_disparity = None
         self.final_disparity = None
@@ -201,39 +208,51 @@ class ModuleM(tf.keras.Model):
         self.stereo_estimator = StereoEstimator(name=f"volume_filtering_{layer}")
         self.context_network = StereoContextNetwork()
 
-    def call(self, left, right, prev_disp=None, is_final_module=False):
+    def call(self, left, right, prev_disp=None, final_res=None):
+        print(f"\nStarted call ModuleM {self.layer}")
+
+        print(f"left: {left.shape}")
+        print(f"right: {right.shape}")
 
         height, width = (left.shape.as_list()[1], left.shape.as_list()[2])
         # Check if module disparity was previously calculated to prevent retracing (for autograph)
-        if self.module_disparity is not None:
-            # Check if layer is the bottom of the pyramid
-            if prev_disp is not None:
-                # Upsample disparity from previous layer
-                upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{self.layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
-                coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
-                indices = BuildIndices(name=f"build_indices_{self.layer}")(coords)
-                # Warp the right image into the left using upsampled disparity
-                warped_left = Warp(name=f"warp_{self.layer}")(right, indices)
-            else:
-                # No previous disparity exits, so use right image instead of warped left
-                warped_left = right
+        #if self.module_disparity is None:
+        # Check if layer is the bottom of the pyramid
+        if prev_disp is not None:
+            # Upsample disparity from previous layer
+            upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{self.layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
+            coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
+            indices = BuildIndices(name=f"build_indices_{self.layer}")(coords)
+            # Warp the right image into the left using upsampled disparity
+            warped_left = Warp(name=f"warp_{self.layer}")(right, indices)
+        else:
+            print("Inside prev disp is None")
+            # No previous disparity exits, so use right image instead of warped left
+            warped_left = right
 
-            # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
-            reprojection_loss = mean_SSIM_L1(warped_left, left)
-            self.add_loss(reprojection_loss)
+        # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
+        reprojection_loss = mean_SSIM_L1(warped_left, left)
+        #self.add_loss(reprojection_loss)
 
-            costs = self.cost_volume(left, warped_left, self.search_range)
-            # Get the disparity using cost volume between left and warped left images
-            self.module_disparity = self.stereo_estimator(costs)
+        print(f"warped_left: {warped_left.shape}")
+
+        print(f"Reprojection Loss: {reprojection_loss}")
+
+        costs = self.cost_volume(left, warped_left, self.search_range)
+        # Get the disparity using cost volume between left and warped left images
+        self.module_disparity = self.stereo_estimator(costs)
 
         # Add the residual refinement network to the final layer
         # also check if disparity was created previously (for autograph)
-        if is_final_module and self.final_disparity is not None:
+        if final_res is not None and self.final_disparity is None:
             self.context_disparity = self.context_network(left, self.module_disparity)
-            self.final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=height, width=width, interpolation='bilinear')(self.context_disparity)
+            self.final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=final_res[0], width=final_res[1], interpolation='bilinear')(self.context_disparity)
 
 
-        return self.final_disparity if is_final_module else self.module_disparity
+        if self.final_disparity is not None: print(f"self.final_disparity: {self.final_disparity.shape}")
+        print(f"self.module_disparity: {self.module_disparity.shape}")
+
+        return self.final_disparity if final_res is not None else self.module_disparity, reprojection_loss
 
 
 
@@ -246,6 +265,7 @@ class MADNet(tf.keras.Model):
     """
     def __init__(self, name="MADNet", height=320, width=1216, search_range=2):
         super(MADNet, self).__init__(name=name)
+        print("\nStarted Initialization MADNet")
         self.height = height
         self.width = width
         self.batch_size = batch_size
@@ -311,88 +331,88 @@ class MADNet(tf.keras.Model):
 
     # Forward pass of the model
     def call(self, inputs):
+        print("\nStarted Call MADNet")
         # # Left and right image inputs
-        # left_input = tf.keras.Input(shape=(self.height, self.width, 3, ), batch_size=self.batch_size, name="left_image_input", dtype=tf.float32)
-        # right_input = tf.keras.Input(shape=(self.height, self.width, 3, ), batch_size=self.batch_size, name="right_image_input", dtype=tf.float32)
         left_input, right_input = inputs
+        print(f"Left input: {left_input.shape}")
+        print(f"Right input: {right_input.shape}")
+        final_res = left_input.shape[1:3]
+
 
         #######################PYRAMID FEATURES###############################
         # Left image feature pyramid (feature extractor)
-        if self.left_pyramid is None:
-            # F1
-            self.left_pyramid = self.left_conv1(left_input)
-            left_F1 = self.left_conv2(self.left_pyramid)
-            # F2
-            self.left_pyramid = self.left_conv3(left_F1)
-            left_F2 = self.left_conv4(self.left_pyramid)
-            # F3
-            self.left_pyramid = self.left_conv5(left_F2)
-            left_F3 = self.left_conv6(self.left_pyramid)
-            # F4
-            self.left_pyramid = self.left_conv7(left_F3)
-            left_F4 = self.left_conv8(self.left_pyramid)
-            # F5
-            self.left_pyramid = self.left_conv9(left_F4)
-            left_F5 = self.left_conv10(self.left_pyramid)
-            # F6
-            self.left_pyramid = self.left_conv11(left_F5)
-            left_F6 = self.left_conv12(self.left_pyramid)
+        #if self.left_pyramid is None:
+        # F1
+        self.left_pyramid = self.left_conv1(left_input)
+        left_F1 = self.left_conv2(self.left_pyramid)
+        # F2
+        self.left_pyramid = self.left_conv3(left_F1)
+        left_F2 = self.left_conv4(self.left_pyramid)
+        # F3
+        self.left_pyramid = self.left_conv5(left_F2)
+        left_F3 = self.left_conv6(self.left_pyramid)
+        # F4
+        self.left_pyramid = self.left_conv7(left_F3)
+        left_F4 = self.left_conv8(self.left_pyramid)
+        # F5
+        self.left_pyramid = self.left_conv9(left_F4)
+        left_F5 = self.left_conv10(self.left_pyramid)
+        # F6
+        self.left_pyramid = self.left_conv11(left_F5)
+        left_F6 = self.left_conv12(self.left_pyramid)
 
 
         # Right image feature pyramid (feature extractor)
-        if self.right_pyramid is None:
-            # F1
-            self.right_pyramid = self.right_conv1(right_input)
-            right_F1 = self.right_conv2(self.right_pyramid)
-            # F2
-            self.right_pyramid = self.right_conv3(right_F1)
-            right_F2 = self.right_conv4(self.right_pyramid)
-            # F3
-            self.right_pyramid = self.right_conv5(right_F2)
-            right_F3 = self.right_conv6(self.right_pyramid)
-            # F4
-            self.right_pyramid = self.right_conv7(right_F3)
-            right_F4 = self.right_conv8(self.right_pyramid)
-            # F5
-            self.right_pyramid = self.right_conv9(right_F4)
-            right_F5 = self.right_conv10(self.right_pyramid)
-            # F6
-            self.right_pyramid = self.right_conv11(right_F5)
-            right_F6 = self.right_conv12(self.right_pyramid)
+        #if self.right_pyramid is None:
+        # F1
+        self.right_pyramid = self.right_conv1(right_input)
+        right_F1 = self.right_conv2(self.right_pyramid)
+        # F2
+        self.right_pyramid = self.right_conv3(right_F1)
+        right_F2 = self.right_conv4(self.right_pyramid)
+        # F3
+        self.right_pyramid = self.right_conv5(right_F2)
+        right_F3 = self.right_conv6(self.right_pyramid)
+        # F4
+        self.right_pyramid = self.right_conv7(right_F3)
+        right_F4 = self.right_conv8(self.right_pyramid)
+        # F5
+        self.right_pyramid = self.right_conv9(right_F4)
+        right_F5 = self.right_conv10(self.right_pyramid)
+        # F6
+        self.right_pyramid = self.right_conv11(right_F5)
+        right_F6 = self.right_conv12(self.right_pyramid)
 
+
+        print(f"left_F6: {left_F6.shape}")
+        print(f"right_F6: {right_F6.shape}")
 
         losses = {}
         #############################SCALE 6#################################
-        D6 = self.M6(left_F6, right_F6)
-        losses["D6"] = D6.losses
-        self.add_loss(losses["D6"])
-        ############################SCALE 5###################################
-        D5 = self.M5(left_F5, right_F5, D6)
-        losses["D5"] = D5.losses
-        self.add_loss(losses["D5"])        
-        ############################SCALE 4###################################
-        D4 = self.M4(left_F4, right_F4, D5)
-        losses["D4"] = D4.losses     
-        self.add_loss(losses["D4"])   
-        ############################SCALE 3###################################
-        D3 = self.M3(left_F3, right_F3, D4)
-        losses["D3"] = D3.losses     
-        self.add_loss(losses["D3"])   
-        ############################SCALE 2###################################
-        D2 = self.M2(left_F2, right_F2, D3, True)
-        losses["D2"] = D2.losses  
-        self.add_loss(losses["D2"])      
+        D6, losses["D6"] = self.M6(left_F6, right_F6)
 
+        print(f"D6: {D6.shape}")
+        print(f"losses[D6]: {losses['D6']}")
+
+        ############################SCALE 5###################################
+        D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
+        ############################SCALE 4###################################
+        D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
+        ############################SCALE 3###################################
+        D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
+        ############################SCALE 2###################################
+        D2, losses["D2"] = self.M2(left_F2, right_F2, D3, final_res)     
+
+        print(f"D2: {D2.shape}")      
+        print(f"Losses: \n{losses}")
         return D2
 
 model = MADNet()
 
-# MADNet = tf.keras.Model(inputs=[left_input, right_input], outputs=M2, name="MADNet")
-
-
 model.compile(
-    optimizer='adam'
+    optimizer='adam'   
 )
+#model.run_eagerly = True
 
 #model.summary()
 #tf.keras.utils.plot_model(MADNet, "./images/MADNet Model Structure.png", show_layer_names=True)
@@ -455,23 +475,8 @@ steps_per_epoch = math.ceil(left_generator.samples / batch_size)
 history = model.fit(
     x=generator(left_generator, right_generator),
     batch_size=batch_size,
-    epochs=1,
+    epochs=2,
     verbose=2,
     steps_per_epoch=steps_per_epoch
 )
 
-
-
-
-# # Stereo estimator model
-# def _stereo_estimator(num_filters=1, model_name="fgc-volume-filtering"):
-#     volume = tf.keras.Input(shape=(None, None, num_filters, ), name="cost_volume", dtype=tf.float32)
-
-#     disp = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")(volume)
-#     disp = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")(disp)
-#     disp = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp3")(disp)
-#     disp = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp4")(disp)
-#     disp = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp5")(disp)
-#     disp = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), strides=1, padding="same", activation=None, use_bias=True, name="disp6")(disp)
-
-#     return tf.keras.Model(inputs=[volume], outputs=[disp], name=model_name)
