@@ -1,6 +1,9 @@
+import os
 import tensorflow as tf
 import numpy as np
 import math
+
+from tensorflow.python.ops.gen_batch_ops import batch
 #from Losses.loss_factory import mean_SSIM_L1
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
@@ -10,7 +13,7 @@ print("\nTensorFlow Version: {}".format(tf.__version__))
 image_height = 320
 image_width = 1216
 input_size = (image_height, image_width)
-batch_size = 1 # Set batch size to none to have a variable batch size
+batch_size = 2 # Set batch size to none to have a variable batch size
 
 search_range = 2 # maximum dispacement (ie. smallest disparity)
 
@@ -50,62 +53,64 @@ search_range = 2 # maximum dispacement (ie. smallest disparity)
 
 #     return 0.85 * mean_SSIM + 0.15 * sum_l1
 
-# def mean_SSIM_L1(x, y):
+# class SSIMLoss(tf.keras.losses.Loss):
 #     """
 #     SSIM dissimilarity measure
 #     Args:
-#         x: predicted image
-#         y: target image
+#         x: target image
+#         y: predicted image
 #     """
-#     print("\nInside loss")
-#     # define layers
-#     pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
-#     multiply = tf.keras.layers.Multiply()
-#     add = tf.keras.layers.Add()
-#     subtract = tf.keras.layers.Subtract()
-#     divide = tf.keras.layers.Lambda(lambda x: tf.divide(x[0], x[1]))
-#     clip_value = tf.keras.layers.Lambda(lambda x: tf.clip_by_value(x, 0 ,1))
-#     reduce_mean = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x))
-#     abs = tf.keras.layers.Lambda(lambda x: tf.abs(x[0] - x[1]))
-#     reduce_sum = tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x))
+#     def __init__(self, name="mean_SSIM_l1"):
+#         super(SSIMLoss, self).__init__(name=name)
 
-#     C1 = tf.constant(0.01**2, dtype=tf.float32)
-#     C2 = tf.constant(0.03**2, dtype=tf.float32)
-#     print(f"x: {x}")
-#     print(f"y: {y}")
+#     def call(self, x, y):
+#         print("\nInside loss")
+#         # define layers
+#         pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
+#         multiply = tf.keras.layers.Multiply()
+#         subtract = tf.keras.layers.Subtract()
+#         divide = tf.keras.layers.Lambda(lambda x: tf.divide(x[0], x[1]))
+#         clip_value = tf.keras.layers.Lambda(lambda x: tf.clip_by_value(x, 0 ,1))
+#         reduce_mean = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x))
+#         abs = tf.keras.layers.Lambda(lambda x: tf.abs(x[0] - x[1]))
+#         reduce_sum = tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x))
 
-#     # pooling
-#     mu_x = pool(x)
-#     mu_y = pool(y)
-#     # multiplies
-#     x_square = multiply([x, x])
-#     y_square = multiply([y, y])
-#     mu_x_square = multiply([mu_x, mu_x])
-#     mu_y_square = multiply([mu_y, mu_y])
-#     xy = multiply([x, y])
-#     mu_x_mu_y = multiply([mu_x, mu_y])
+#         C1 = tf.constant(0.01**2, dtype=tf.float32)
+#         C2 = tf.constant(0.03**2, dtype=tf.float32)
 
-#     sigma_x = subtract([pool(x_square), mu_x_square])
-#     sigma_y = subtract([pool(y_square), mu_y_square])
-#     sigma_xy = subtract([pool(xy), mu_x_mu_y])
+#         # pooling
+#         mu_x = pool(x)
+#         mu_y = pool(y)
+#         # multiplies
+#         x_square = multiply([x, x])
+#         y_square = multiply([y, y])
+#         mu_x_square = multiply([mu_x, mu_x])
+#         mu_y_square = multiply([mu_y, mu_y])
+#         xy = multiply([x, y])
+#         mu_x_mu_y = multiply([mu_x, mu_y])
+
+#         sigma_x = subtract([pool(x_square), mu_x_square])
+#         sigma_y = subtract([pool(y_square), mu_y_square])
+#         sigma_xy = subtract([pool(xy), mu_x_mu_y])
 
 
-#     n1 = multiply([tf.constant(2, dtype=tf.float32), mu_x, mu_y])
-#     n2 = multiply([tf.constant(2, dtype=tf.float32), sigma_xy])
+#         n1 = multiply([tf.constant(2, dtype=tf.float32), mu_x, mu_y])
+#         n2 = multiply([tf.constant(2, dtype=tf.float32), sigma_xy])
 
-#     print(f"n1: {n1}")
-#     print(f"n2: {n2}")
+#         SSIM_n = multiply([n1 + C1, n2 + C2])
+#         SSIM_d = multiply([mu_x_square + mu_y_square, C1, sigma_x + sigma_y, C2])
 
-#     SSIM_n = multiply([add([n1, C1]), add([n2, C2])])
-#     SSIM_d = multiply([add([mu_x_square, mu_y_square, C1]), add([sigma_x, sigma_y, C2])])
+#         SSIM = divide([SSIM_n, SSIM_d])
+#         SSIM = divide([subtract([tf.constant(1, dtype=tf.float32), SSIM]), tf.constant(2, dtype=tf.float32)])
+#         SSIM = clip_value([SSIM])
 
-#     SSIM = divide([SSIM_n, SSIM_d])
-#     SSIM = divide([subtract([tf.constant(1, dtype=tf.float32), SSIM]), tf.constant(2, dtype=tf.float32)])
-#     SSIM = clip_value([SSIM])
+#         mean_SSIM = reduce_mean(SSIM)
+#         sum_l1 = reduce_sum(abs([x, y]))
+#         loss = multiply([tf.constant(0.85, dtype=tf.float32), mean_SSIM]) + multiply([tf.constant(0.15, dtype=tf.float32), sum_l1])
 
-#     mean_SSIM = reduce_mean(SSIM)
-#     sum_l1 = reduce_sum(abs([x, y]))
-#     return add([multiply([tf.constant(0.85, dtype=tf.float32), mean_SSIM]), multiply([tf.constant(0.15, dtype=tf.float32), sum_l1])])
+#         #loss = C1 + C2
+
+#         return loss
 
 
 class SSIMLoss(tf.keras.losses.Loss):
@@ -117,56 +122,30 @@ class SSIMLoss(tf.keras.losses.Loss):
     """
     def __init__(self, name="mean_SSIM_l1"):
         super(SSIMLoss, self).__init__(name=name)
+        self.pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
 
     def call(self, x, y):
         print("\nInside loss")
-        # define layers
-        pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
-        multiply = tf.keras.layers.Multiply()
-        subtract = tf.keras.layers.Subtract()
-        divide = tf.keras.layers.Lambda(lambda x: tf.divide(x[0], x[1]))
-        clip_value = tf.keras.layers.Lambda(lambda x: tf.clip_by_value(x, 0 ,1))
-        reduce_mean = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x))
-        abs = tf.keras.layers.Lambda(lambda x: tf.abs(x[0] - x[1]))
-        reduce_sum = tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x))
+        C1 = 0.01**2
+        C2 = 0.03**2
+        mu_x = self.pool(x)
+        mu_y = self.pool(y)
 
-        C1 = tf.constant(0.01**2, dtype=tf.float32)
-        C2 = tf.constant(0.03**2, dtype=tf.float32)
+        sigma_x = self.pool(x**2) - mu_x**2
+        sigma_y = self.pool(y**2) - mu_y**2
+        sigma_xy = self.pool(x*y) - mu_x * mu_y
 
-        # pooling
-        mu_x = pool(x)
-        mu_y = pool(y)
-        # multiplies
-        x_square = multiply([x, x])
-        y_square = multiply([y, y])
-        mu_x_square = multiply([mu_x, mu_x])
-        mu_y_square = multiply([mu_y, mu_y])
-        xy = multiply([x, y])
-        mu_x_mu_y = multiply([mu_x, mu_y])
+        SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
+        SSIM_d = (mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2)
 
-        sigma_x = subtract([pool(x_square), mu_x_square])
-        sigma_y = subtract([pool(y_square), mu_y_square])
-        sigma_xy = subtract([pool(xy), mu_x_mu_y])
+        SSIM = SSIM_n / SSIM_d
+        SSIM = tf.clip_by_value((1-SSIM)/2, 0 ,1)
 
+        mean_SSIM = tf.reduce_mean(SSIM)
 
-        n1 = multiply([tf.constant(2, dtype=tf.float32), mu_x, mu_y])
-        n2 = multiply([tf.constant(2, dtype=tf.float32), sigma_xy])
+        sum_l1 = tf.reduce_sum(tf.abs(x - y))
 
-        SSIM_n = multiply([n1 + C1, n2 + C2])
-        SSIM_d = multiply([mu_x_square + mu_y_square, C1, sigma_x + sigma_y, C2])
-
-        SSIM = divide([SSIM_n, SSIM_d])
-        SSIM = divide([subtract([tf.constant(1, dtype=tf.float32), SSIM]), tf.constant(2, dtype=tf.float32)])
-        SSIM = clip_value([SSIM])
-
-        mean_SSIM = reduce_mean(SSIM)
-        sum_l1 = reduce_sum(abs([x, y]))
-        loss = multiply([tf.constant(0.85, dtype=tf.float32), mean_SSIM]) + multiply([tf.constant(0.15, dtype=tf.float32), sum_l1])
-
-        #loss = C1 + C2
-
-        return loss
-
+        return 0.85 * mean_SSIM + 0.15 * sum_l1
 
 
 
@@ -283,19 +262,20 @@ class StereoContextNetwork(tf.keras.Model):
         self.context5 = tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), dilation_rate=16, padding="same", activation=act, use_bias=True, name="context5")
         self.context6 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context6")
         self.context7 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation="linear", use_bias=True, name="context7")
+        self.add = tf.keras.layers.Add(name="context_disp")
+        self.concat = tf.keras.layers.Concatenate(axis=-1)
+
+        # self.warp = Warp(name="warp_final")
+        # self.build_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)
 
     def call(self, input, disp, final_left, final_right):
         print(f"\nStarted call context network")
-        #volume = tf.keras.layers.concatenate([input, disp], axis=-1)
-        volume = tf.keras.layers.Concatenate(axis=-1)([input, disp])
+        volume = self.concat([input, disp])
 
         print(f"input: {input.shape}")
         print(f"disp: {disp.shape}")
         print(f"volume: {volume.shape}")
 
-        # Need to check if context was created previously,
-        # so variable doesnt get created multiple times (for autograph)
-        #if self.x is None:
         self.x = self.context1(volume)
         self.x = self.context2(self.x)
         self.x = self.context3(self.x)
@@ -304,28 +284,21 @@ class StereoContextNetwork(tf.keras.Model):
         self.x = self.context6(self.x)
         self.x = self.context7(self.x)
 
-        #context_disp = tf.keras.layers.add([disp, self.x], name="final_disp")
-        context_disp = tf.keras.layers.Add(name="context_disp")([disp, self.x])
-
-
+        context_disp = self.add([disp, self.x])
         final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=final_left.shape[1], width=final_left.shape[2], interpolation='bilinear')(context_disp)
 
-        # warp right image with final disparity to get final reprojection loss
-        #final_coords = tf.keras.layers.concatenate([final_disparity, tf.zeros_like(final_disparity)], -1)
-        final_coords = tf.keras.layers.Concatenate(axis=-1)([final_disparity, tf.zeros_like(final_disparity)])
-        final_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)(final_coords)
-        # Warp the right image into the left using final disparity
-        final_warped_left = Warp(name="warp_final")(final_right, final_indices)    
+        # # warp right image with final disparity to get final reprojection loss
+        # final_coords = self.concat([final_disparity, tf.zeros_like(final_disparity)])
+        # final_indices = self.build_indices(final_coords)
+        # # Warp the right image into the left using final disparity
+        # final_warped_left = self.warp(final_right, final_indices)    
 
-        print(f"final left image: {final_left.shape}")
+        # final_reprojection_loss = self.loss_fn(final_warped_left, final_left)
+        # print(f"final_warped_left: {final_warped_left.shape}")
+        # print(f"Final Reprojection Loss: {final_reprojection_loss}")         
+        # self.add_loss(final_reprojection_loss) 
 
-        final_reprojection_loss = self.loss_fn(final_warped_left, final_left)
-        self.add_loss(final_reprojection_loss) 
-
-        print(f"final_warped_left: {final_warped_left.shape}")
-        print(f"Final Reprojection Loss: {final_reprojection_loss}")       
-
-        return final_disparity, final_reprojection_loss
+        return final_disparity
 
 
 class StereoEstimator(tf.keras.Model):
@@ -355,9 +328,7 @@ class StereoEstimator(tf.keras.Model):
             volume = self.concat([costs, upsampled_disp])
         else:
             volume = costs
-        # Need to check if disp was created previously,
-        # so variable doesnt get created multiple times (for autograph)
-        #if self.x is None:
+
         x = self.disp1(volume)
         x = self.disp2(x)
         x = self.disp3(x)
@@ -393,8 +364,6 @@ class ModuleM(tf.keras.Model):
         print(f"right: {right.shape}")
 
         height, width = (left.shape.as_list()[1], left.shape.as_list()[2])
-        # Check if module disparity was previously calculated to prevent retracing (for autograph)
-        #if self.module_disparity is None:
         # Check if layer is the bottom of the pyramid
         if prev_disp is not None:
             # Upsample disparity from previous layer
@@ -422,15 +391,13 @@ class ModuleM(tf.keras.Model):
         # Add the residual refinement network to the final layer
         # also check if disparity was created previously (for autograph)
         if final_left is not None and self.final_disparity is None:
-            self.final_disparity, self.final_reprojection_loss = StereoContextNetwork(batch_size=self.batch_size)(left, self.module_disparity, final_left, final_right) 
-            self.add_loss(self.final_reprojection_loss)
+            self.final_disparity = StereoContextNetwork(batch_size=self.batch_size)(left, self.module_disparity, final_left, final_right) 
 
         print(f"self.module_disparity: {self.module_disparity.shape}")
 
         disp = self.final_disparity if self.final_disparity is not None else self.module_disparity
-        final_loss = None if self.final_reprojection_loss is None else self.final_reprojection_loss
 
-        return disp, reprojection_loss, final_loss
+        return disp, reprojection_loss
 
 
 
@@ -506,19 +473,20 @@ class MADNet(tf.keras.Model):
         self.M2 = ModuleM(name="M2", layer="2", search_range=self.search_range, batch_size=self.batch_size)
 
 
-
-
     # Forward pass of the model
     def call(self, inputs):
         print("\nStarted Call MADNet")
         # Left and right image inputs
-        left_input, right_input = inputs
+        #left_input, right_input = inputs
+        left_input = inputs["left_input"]
+        right_input = inputs["right_input"]
+
+        #print(f"Inputs: {inputs}")
         print(f"Left input: {left_input.shape}")
         print(f"Right input: {right_input.shape}")
 
         #######################PYRAMID FEATURES###############################
         # Left image feature pyramid (feature extractor)
-        #if self.left_pyramid is None:
         # F1
         self.left_pyramid = self.left_conv1(left_input)
         left_F1 = self.left_conv2(self.left_pyramid)
@@ -540,7 +508,6 @@ class MADNet(tf.keras.Model):
 
 
         # Right image feature pyramid (feature extractor)
-        #if self.right_pyramid is None:
         # F1
         self.right_pyramid = self.right_conv1(right_input)
         right_F1 = self.right_conv2(self.right_pyramid)
@@ -562,94 +529,126 @@ class MADNet(tf.keras.Model):
 
         losses = {}
         #############################SCALE 6#################################
-        D6, losses["D6"], _ = self.M6(left_F6, right_F6)
+        D6, losses["D6"] = self.M6(left_F6, right_F6)
         ############################SCALE 5###################################
-        D5, losses["D5"], _ = self.M5(left_F5, right_F5, D6)       
+        D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
         ############################SCALE 4###################################
-        D4, losses["D4"], _ = self.M4(left_F4, right_F4, D5) 
+        D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
         ############################SCALE 3###################################
-        D3, losses["D3"], _ = self.M3(left_F3, right_F3, D4)
+        D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
         ############################SCALE 2###################################
-        D2, losses["D2"], losses["final"] = self.M2(left_F2, right_F2, D3, left_input, right_input)     
-
+        D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)     
     
         print(f"Losses: \n{losses}")
-        self.add_loss(losses)
+        #self.add_loss(losses)
         return D2
 
-model = MADNet()
+model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
 model.compile(
     optimizer='adam'   
 )
 
-#model.summary()
-#tf.keras.utils.plot_model(MADNet, "./images/MADNet Model Structure.png", show_layer_names=True)
-
 # ---------------------------------------------------------------------------
 # Train the model
 
-left_input = np.random.random((1, image_height, image_width, 3))
-right_input = np.random.random((1, image_height, image_width, 3))
-
-history = model.fit(
-    x=[left_input, right_input],
-    epochs=3,
-    verbose=2,
-    #steps_per_epoch=steps_per_epoch
-)
-
-
-
-# # --------------------------------------------------------------------------------
-# # Data Preperation
-
-# left_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/left"
-# right_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/right"
-
-# # Create datagenerator object for loading and preparing image data for training
-# left_dataflow_kwargs = dict(
-#     directory = left_dir, 
-#     target_size = input_size, 
-#     class_mode = None,
-#     batch_size = batch_size,
-#     shuffle = False,     
-#     interpolation = "bilinear",
-#     )
-
-# right_dataflow_kwargs = dict(
-#     directory = right_dir, 
-#     target_size = input_size, 
-#     class_mode = None,
-#     batch_size = batch_size,
-#     shuffle = False,     
-#     interpolation = "bilinear",
-#     )
-
+# left_input = np.random.random((1, image_height, image_width, 3))
+# right_input = np.random.random((1, image_height, image_width, 3))
 
 # # Normalize pixel values
 # datagen_args = dict(
 #     rescale = 1./255
 #         )
-
 # datagen = tf.keras.preprocessing.image.ImageDataGenerator(**datagen_args)
+# numpy_gen = tf.keras.preprocessing.image.NumpyArrayIterator(x={"left_input": left_input, "right_input": right_input}, y=None, image_data_generator=datagen, batch_size=batch_size)
 
-# left_generator = datagen.flow_from_directory(**left_dataflow_kwargs)
-# right_generator = datagen.flow_from_directory(**right_dataflow_kwargs)
 
-# def generator(left_generator, right_generator):
-#     """Combines the left and right image generators into a 
-#         single image generator with two inputs for training.
-        
-#         Make sure the left and right images have the same ID,
-#         otherwise the order might change which will pair the wrong
-#         left and right images."""
-#     while True:
-#         for left, right in zip(left_generator, right_generator):
-#             yield {"left_input": left, "right_input": right}, None
+# history = model.fit(
+#     x=numpy_gen,
+#     epochs=10,
+#     verbose=2,
+#     #steps_per_epoch=steps_per_epoch
+# )
 
-# steps_per_epoch = math.ceil(left_generator.samples / batch_size)
+# model.summary()
+#tf.keras.utils.plot_model(model, "G:/My Drive/repos/Real-time-self-adaptive-deep-stereo/images/MADNet Model Structure.png", show_layer_names=True)
 
+
+# --------------------------------------------------------------------------------
+# Data Preperation
+
+
+class StereoGenerator(tf.keras.utils.Sequence):
+    """
+    Takes paths to left and right stereo image directories
+    and creates a generator that returns a batch of left 
+    and right images.
+    
+    """
+    def __init__(self, left_dir, right_dir, batch_size, height, width):
+        self.left_dir = left_dir
+        self.right_dir = right_dir
+        self.batch_size = batch_size
+        self.height = height
+        self.width = width
+
+        self.left_paths = [path for path in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{path}")]
+        self.right_paths = [path for path in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{path}")]
+        # Check that there is a left image for every right image
+        self.num_left = len(self.left_paths)
+        self.num_right = len(self.right_paths)
+        if self.num_left != self.num_right:
+            raise ValueError(f"Number of right and left images do now match. Left number: {self.num_left}. Right number: {self.num_right}")
+        # Check if images names are identical
+        self.left_paths.sort()
+        self.right_paths.sort()
+        if self.left_paths != self.right_paths:
+            raise ValueError("Left and right image names do not match. Please make sure left and right image names are identical")
+
+    def __len__(self):
+        return self.num_left // self.batch_size
+
+    def __get_image(self, image_dir, image_name):
+        # get a single image helper function
+        image = tf.keras.preprocessing.image.load_img(f"{image_dir}/{image_name}")
+        image_arr = tf.keras.preprocessing.image.img_to_array(image)
+        image_arr = tf.image.resize(image_arr, (self.height, self.width)).numpy()
+        return image_arr/255.
+
+    def __getitem__(self, batch_index):
+        index = batch_index * self.batch_size
+        left_batch = self.left_paths[index: self.batch_size + index]
+        right_batch = self.right_paths[index: self.batch_size + index]
+        print("\nInside Generator getitem")
+        print(f"left batch: {left_batch}")
+        print(f"right batch: {right_batch}")
+
+        left_images = np.asarray([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
+        right_images = np.asarray([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
+
+        return {'left_input': left_images, 'right_input': right_images}, None
+
+
+left_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/left/data"
+right_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/right/data"
+
+# steps_per_epoch = math.ceil(left_generator.samples / batch_size)        
+
+stereo_gen = StereoGenerator(
+    left_dir=left_dir, 
+    right_dir=right_dir, 
+    batch_size=batch_size, 
+    height=image_height, 
+    width=image_width
+    ) 
+
+
+history = model.fit(
+    x=stereo_gen,
+    epochs=10,
+    verbose=2,
+    #steps_per_epoch=steps_per_epoch
+)
 
 # # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # # debugging
