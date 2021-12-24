@@ -3,6 +3,9 @@ import tensorflow as tf
 import numpy as np
 import math
 
+from tensorflow.python.ops.gen_batch_ops import batch
+#from Losses.loss_factory import mean_SSIM_L1
+
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
 
@@ -13,6 +16,102 @@ input_size = (image_height, image_width)
 batch_size = 2 # Set batch size to none to have a variable batch size
 
 search_range = 2 # maximum dispacement (ie. smallest disparity)
+
+
+# height resolution is too small on M6 for this method
+# def mean_SSIM_L1(reprojected, original):
+#     sum_l1 = tf.reduce_sum(tf.abs(reprojected - original))
+#     mean_SSIM = tf.reduce_mean(tf.image.ssim(reprojected, original, 1.0))
+#     return 0.85 * mean_SSIM + 0.15 * sum_l1
+
+# doesnt support symbolic tensors
+# def mean_SSIM_L1(x, y):
+#     """
+#     SSIM dissimilarity measure
+#     Args:
+#         x: predicted image
+#         y: target image
+#     """
+#     C1 = 0.01**2
+#     C2 = 0.03**2
+#     mu_x = tf.nn.avg_pool(x,[1,3,3,1],[1,1,1,1],padding='VALID')
+#     mu_y = tf.nn.avg_pool(y,[1,3,3,1],[1,1,1,1],padding='VALID')
+
+#     sigma_x = tf.nn.avg_pool(x**2, [1,3,3,1],[1,1,1,1],padding='VALID') - mu_x**2
+#     sigma_y = tf.nn.avg_pool(y**2, [1,3,3,1],[1,1,1,1],padding='VALID') - mu_y**2
+#     sigma_xy = tf.nn.avg_pool(x*y, [1,3,3,1],[1,1,1,1],padding='VALID') - mu_x * mu_y
+
+#     SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
+#     SSIM_d = (mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2)
+
+#     SSIM = SSIM_n / SSIM_d
+#     SSIM = tf.clip_by_value((1-SSIM)/2, 0 ,1)
+
+#     mean_SSIM = tf.reduce_mean(SSIM)
+
+#     sum_l1 = tf.reduce_sum(tf.abs(x - y))
+
+#     return 0.85 * mean_SSIM + 0.15 * sum_l1
+
+# class SSIMLoss(tf.keras.losses.Loss):
+#     """
+#     SSIM dissimilarity measure
+#     Args:
+#         x: target image
+#         y: predicted image
+#     """
+#     def __init__(self, name="mean_SSIM_l1"):
+#         super(SSIMLoss, self).__init__(name=name)
+
+#     def call(self, x, y):
+#         print("\nInside loss")
+#         # define layers
+#         pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
+#         multiply = tf.keras.layers.Multiply()
+#         subtract = tf.keras.layers.Subtract()
+#         divide = tf.keras.layers.Lambda(lambda x: tf.divide(x[0], x[1]))
+#         clip_value = tf.keras.layers.Lambda(lambda x: tf.clip_by_value(x, 0 ,1))
+#         reduce_mean = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x))
+#         abs = tf.keras.layers.Lambda(lambda x: tf.abs(x[0] - x[1]))
+#         reduce_sum = tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x))
+
+#         C1 = tf.constant(0.01**2, dtype=tf.float32)
+#         C2 = tf.constant(0.03**2, dtype=tf.float32)
+
+#         # pooling
+#         mu_x = pool(x)
+#         mu_y = pool(y)
+#         # multiplies
+#         x_square = multiply([x, x])
+#         y_square = multiply([y, y])
+#         mu_x_square = multiply([mu_x, mu_x])
+#         mu_y_square = multiply([mu_y, mu_y])
+#         xy = multiply([x, y])
+#         mu_x_mu_y = multiply([mu_x, mu_y])
+
+#         sigma_x = subtract([pool(x_square), mu_x_square])
+#         sigma_y = subtract([pool(y_square), mu_y_square])
+#         sigma_xy = subtract([pool(xy), mu_x_mu_y])
+
+
+#         n1 = multiply([tf.constant(2, dtype=tf.float32), mu_x, mu_y])
+#         n2 = multiply([tf.constant(2, dtype=tf.float32), sigma_xy])
+
+#         SSIM_n = multiply([n1 + C1, n2 + C2])
+#         SSIM_d = multiply([mu_x_square + mu_y_square, C1, sigma_x + sigma_y, C2])
+
+#         SSIM = divide([SSIM_n, SSIM_d])
+#         SSIM = divide([subtract([tf.constant(1, dtype=tf.float32), SSIM]), tf.constant(2, dtype=tf.float32)])
+#         SSIM = clip_value([SSIM])
+
+#         mean_SSIM = reduce_mean(SSIM)
+#         sum_l1 = reduce_sum(abs([x, y]))
+#         loss = multiply([tf.constant(0.85, dtype=tf.float32), mean_SSIM]) + multiply([tf.constant(0.15, dtype=tf.float32), sum_l1])
+
+#         #loss = C1 + C2
+
+#         return loss
+
 
 class SSIMLoss(tf.keras.losses.Loss):
     """
@@ -280,6 +379,7 @@ class ModuleM(tf.keras.Model):
 
         # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
         reprojection_loss = self.loss_fn(warped_left, left)
+        self.add_loss(reprojection_loss)
 
         print(f"warped_left: {warped_left.shape}")
         print(f"Reprojection Loss: {reprojection_loss}")
@@ -372,203 +472,6 @@ class MADNet(tf.keras.Model):
         ############################SCALE 2###################################
         self.M2 = ModuleM(name="M2", layer="2", search_range=self.search_range, batch_size=self.batch_size)
 
-    def train_step(self, inputs):
-        print("\nInside train_step MADNet")
-        # Left and right image inputs
-        print(f"Inputs: {inputs}")
-
-        left_input = inputs[0]["left_input"]
-        right_input = inputs[0]["right_input"]        
-
-        print(f"Left input: {left_input.shape}")
-        print(f"Right input: {right_input.shape}")
-
-        #######################PYRAMID FEATURES###############################
-        # Left image feature pyramid (feature extractor)
-        # F1
-        left_F01 = self.left_conv1(left_input)
-        left_F1 = self.left_conv2(left_F01)
-        # F2
-        left_F02 = self.left_conv3(left_F1)
-        left_F2 = self.left_conv4(left_F02)
-        # F3
-        left_F03 = self.left_conv5(left_F2)
-        left_F3 = self.left_conv6(left_F03)
-        # F4
-        left_F04 = self.left_conv7(left_F3)
-        left_F4 = self.left_conv8(left_F04)
-        # F5
-        left_F05 = self.left_conv9(left_F4)
-        left_F5 = self.left_conv10(left_F05)
-        # F6
-        left_F06 = self.left_conv11(left_F5)
-        left_F6 = self.left_conv12(left_F06)
-
-
-        # Right image feature pyramid (feature extractor)
-        # F1
-        right_F01 = self.right_conv1(right_input)
-        right_F1 = self.right_conv2(right_F01)
-        # F2
-        right_F02 = self.right_conv3(right_F1)
-        right_F2 = self.right_conv4(right_F02)
-        # F3
-        right_F03 = self.right_conv5(right_F2)
-        right_F3 = self.right_conv6(right_F03)
-        # F4
-        right_F04 = self.right_conv7(right_F3)
-        right_F4 = self.right_conv8(right_F04)
-        # F5
-        right_F05 = self.right_conv9(right_F4)
-        right_F5 = self.right_conv10(right_F05)
-        # F6
-        right_F06 = self.right_conv11(right_F5)
-        right_F6 = self.right_conv12(right_F06)
-
-        losses = {}
-        #############################SCALE 6#################################
-        with tf.GradientTape() as tape:
-            D6, losses["D6"] = self.M6(left_F6, right_F6)
-        M6_grads = tape.gradient(losses["D6"], self.M6.trainable_weights)
-        self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))
-        left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
-        self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
-        left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
-        self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
-        right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
-        self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
-        right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
-        self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
-            
-        ############################SCALE 5###################################
-        D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
-        ############################SCALE 4###################################
-        D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
-        ############################SCALE 3###################################
-        D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
-        ############################SCALE 2###################################
-        D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)    
-
-
-        return losses
-
-    def make_train_function(self, force=False):
-        """Creates a function that executes one step of training.
-        This method can be overridden to support custom training logic.
-        This method is called by `Model.fit` and `Model.train_on_batch`.
-        Typically, this method directly controls `tf.function` and
-        `tf.distribute.Strategy` settings, and delegates the actual training
-        logic to `Model.train_step`.
-        This function is cached the first time `Model.fit` or
-        `Model.train_on_batch` is called. The cache is cleared whenever
-        `Model.compile` is called. You can skip the cache and generate again the
-        function with `force=True`.
-        Args:
-            force: Whether to regenerate the train function and skip the cached
-            function if available.
-        Returns:
-            Function. The function created by this method should accept a
-            `tf.data.Iterator`, and return a `dict` containing values that will
-            be passed to `tf.keras.Callbacks.on_train_batch_end`, such as
-            `{'loss': 0.2, 'accuracy': 0.7}`.
-        """
-        # helper functions
-        def _minimum_control_deps(outputs):
-            """Returns the minimum control dependencies to ensure step succeeded."""
-            if tf.executing_eagerly():
-                return []  # Control dependencies not needed.
-            outputs = tf.nest.flatten(outputs, expand_composites=True)
-            for out in outputs:
-                # Variables can't be control dependencies.
-                if not isinstance(out, tf.Variable):
-                    return [out]  # Return first Tensor or Op from outputs.
-            return []  # No viable Tensor or Op to use for control deps.
-
-        # def reduce_per_replica(values, strategy, reduction='first'):
-        #     """Reduce PerReplica objects.
-        #     Args:
-        #         values: Structure of `PerReplica` objects or `Tensor`s. `Tensor`s are
-        #         returned as-is.
-        #         strategy: `tf.distribute.Strategy` object.
-        #         reduction: One of 'first', 'concat'.
-        #     Returns:
-        #         Structure of `Tensor`s.
-        #     """
-
-        #     def _reduce(v):
-        #         """Reduce a single `PerReplica` object."""
-        #         if reduction == 'concat' and _collective_all_reduce_multi_worker(strategy):
-        #             return _multi_worker_concat(v, strategy)
-        #         if not _is_per_replica_instance(v):
-        #             return v
-        #         elif reduction == 'first':
-        #             return strategy.unwrap(v)[0]
-        #         elif reduction == 'concat':
-        #             if _is_tpu_multi_host(strategy):
-        #                 return _tpu_multi_host_concat(v, strategy)a
-        #             else:
-        #                 return concat(strategy.unwrap(v))
-        #         else:
-        #             raise ValueError('`reduction` must be "first" or "concat". Received: '
-        #                             f'reduction={reduction}.')
-
-        #     return tf.nest.map_structure(_reduce, values)
-
-
-        if self.train_function is not None and not force:
-            return self.train_function
-
-        def step_function(model, iterator):
-            """Runs a single training step."""
-            print("\nInside step_function")
-            print(f"Iterator: {iterator}")
-
-
-            def run_step(data):
-                outputs = model.train_step(data)
-                # Ensure counter is updated only if `train_step` succeeds.
-                with tf.control_dependencies(_minimum_control_deps(outputs)):
-                    model._train_counter.assign_add(1)  # pylint: disable=protected-access
-                return outputs
-
-            data = next(iterator)
-            print(f"data in step_function: {data}")
-
-
-            outputs = model.distribute_strategy.run(run_step, args=(data,))
-            # outputs = reduce_per_replica(
-            #     outputs, self.distribute_strategy, reduction='first')
-            #write_scalar_summaries(outputs, step=model._train_counter)  # pylint: disable=protected-access
-            return outputs
-
-        if (self._steps_per_execution is None or
-            self._steps_per_execution.numpy().item() == 1):
-
-            def train_function(iterator):
-                """Runs a training execution with one step."""
-                return step_function(self, iterator)
-
-        else:
-
-            def train_function(iterator):
-                """Runs a training execution with multiple steps."""
-                for _ in tf.range(self._steps_per_execution):
-                    outputs = step_function(self, iterator)
-                return outputs
-
-        if not self.run_eagerly:
-            train_function = tf.function(
-                train_function, experimental_relax_shapes=True)
-            self.train_tf_function = train_function
-
-        self.train_function = train_function
-
-        if self._cluster_coordinator:
-            self.train_function = lambda iterator: self._cluster_coordinator.schedule(  # pylint: disable=g-long-lambda
-                train_function, args=(iterator,))
-
-        return self.train_function
-
 
     # Forward pass of the model
     def call(self, inputs):
@@ -637,6 +540,7 @@ class MADNet(tf.keras.Model):
         D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)     
     
         print(f"Losses: \n{losses}")
+        #self.add_loss(losses)
         return D2
 
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
@@ -681,13 +585,12 @@ class StereoGenerator(tf.keras.utils.Sequence):
     and right images.
     
     """
-    def __init__(self, left_dir, right_dir, batch_size, height, width, shuffle):
+    def __init__(self, left_dir, right_dir, batch_size, height, width):
         self.left_dir = left_dir
         self.right_dir = right_dir
         self.batch_size = batch_size
         self.height = height
         self.width = width
-        self.shuffle = shuffle
 
         self.left_paths = [path for path in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{path}")]
         self.right_paths = [path for path in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{path}")]
@@ -703,9 +606,7 @@ class StereoGenerator(tf.keras.utils.Sequence):
             raise ValueError("Left and right image names do not match. Please make sure left and right image names are identical")
 
     def __len__(self):
-        # Denotes the number of batches per epoch
         return self.num_left // self.batch_size
-
 
     def __get_image(self, image_dir, image_name):
         # get a single image helper function
@@ -722,10 +623,9 @@ class StereoGenerator(tf.keras.utils.Sequence):
         print(f"left batch: {left_batch}")
         print(f"right batch: {right_batch}")
 
-        # left_images = np.asarray([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
-        # right_images = np.asarray([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
-        left_images = tf.constant([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
-        right_images = tf.constant([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
+        left_images = np.asarray([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
+        right_images = np.asarray([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
+
         return {'left_input': left_images, 'right_input': right_images}, None
 
 
@@ -739,39 +639,53 @@ stereo_gen = StereoGenerator(
     right_dir=right_dir, 
     batch_size=batch_size, 
     height=image_height, 
-    width=image_width,
-    shuffle=False
+    width=image_width
     ) 
-
-# gen = lambda: (image for image in stereo_gen)
-
-# # Convert generator to tf.data.Dataset
-# stereo_dataset = tf.data.Dataset.from_generator(
-#     gen,
-#     output_signature=(
-#         {'left_input': tf.TensorSpec(shape=[None, None, None, None]), 'right_input': tf.TensorSpec(shape=[None, None, None, None])},
-#         #tf.TensorSpec(shape=[None])
-#     )
-# )
-
-
-left_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
-right_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
-
-#stereo_dataset = tf.data.Dataset.from_tensor_slices((left_input, right_input))
-stereo_dataset = tf.data.Dataset.from_tensor_slices(({'left_input': left_input, 'right_input': right_input}, None))
-
-
-stereo_dataset.element_spec
-
-
-
-
 
 
 history = model.fit(
-    x=stereo_dataset,
+    x=stereo_gen,
     epochs=10,
     verbose=2,
     #steps_per_epoch=steps_per_epoch
 )
+
+# # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# # debugging
+
+# class Model(tf.keras.Model):
+#     """
+#     The test model
+#     """
+#     def __init__(self, name="DebugModel"):
+#         super(Model, self).__init__(name=name)
+#         print("\nStarted Initialization")
+#         self.layer = tf.keras.layers.Dense(10)
+
+#     # Forward pass of the model
+#     def call(self, inputs):
+#         print("\nStarted Call")
+#         left_input = inputs
+#         print(f"Left input: {left_input.shape}")
+#         final_res = left_input.shape[1:3]
+
+#         if final_res[0] is None or final_res[1] is None:
+#             raise RuntimeError(f"Input resolution is None, please check your inputs: height {final_res[0]} width {final_res[1]}")
+
+#         output = self.layer(left_input)
+#         return output
+
+
+# model = Model()
+
+# model.compile(
+#     optimizer='adam'   
+# )
+
+
+# history = model.fit(
+#     x=left_generator,
+#     epochs=2,
+#     verbose=2,
+#     steps_per_epoch=1
+# )
