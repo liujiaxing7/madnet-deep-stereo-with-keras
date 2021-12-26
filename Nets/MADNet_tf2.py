@@ -10,7 +10,7 @@ print("\nTensorFlow Version: {}".format(tf.__version__))
 image_height = 320
 image_width = 1216
 input_size = (image_height, image_width)
-batch_size = 2 # Set batch size to none to have a variable batch size
+batch_size = 1 # Set batch size to none to have a variable batch size
 
 search_range = 2 # maximum dispacement (ie. smallest disparity)
 
@@ -73,11 +73,11 @@ class StereoCostVolume(tf.keras.layers.Layer):
             cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
             cost_vol.append(cost)
 
-        cost_vol = tf.concat(cost_vol, axis=3)
+        # wrapping concat in tf.Variable so that backpropagation can work
+        cost_vol = tf.Variable(tf.concat(cost_vol, axis=3)) 
 
-        cost_curve = tf.concat([c1, cost_vol], axis=3)
+        cost_curve = tf.Variable(tf.concat([c1, cost_vol], axis=3))
         return cost_curve
-
 
 class BuildIndices(tf.keras.layers.Layer):
 
@@ -101,6 +101,7 @@ class BuildIndices(tf.keras.layers.Layer):
                 pixel_coords[0][i][j][1] = i
 
         pixel_coords = tf.constant(pixel_coords, tf.float32)
+
         output = tf.concat([batches_coords, pixel_coords + coords], -1)            
 
         return output
@@ -171,7 +172,7 @@ class StereoContextNetwork(tf.keras.Model):
 
     def call(self, input, disp, final_left, final_right):
         print(f"\nStarted call context network")
-        volume = self.concat([input, disp])
+        volume = tf.Variable(self.concat([input, disp]))
 
         print(f"input: {input.shape}")
         print(f"disp: {disp.shape}")
@@ -229,7 +230,6 @@ class StereoEstimator(tf.keras.Model):
             volume = self.concat([costs, upsampled_disp])
         else:
             volume = costs
-
         x = self.disp1(volume)
         x = self.disp2(x)
         x = self.disp3(x)
@@ -277,7 +277,7 @@ class ModuleM(tf.keras.Model):
             print("Inside prev disp is None")
             # No previous disparity exits, so use right image instead of warped left
             warped_left = right
-
+        warped_left = right
         # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
         reprojection_loss = self.loss_fn(warped_left, left)
 
@@ -285,6 +285,7 @@ class ModuleM(tf.keras.Model):
         print(f"Reprojection Loss: {reprojection_loss}")
 
         costs = self.cost_volume(left, warped_left, self.search_range)
+
         # Get the disparity using cost volume between left and warped left images
         self.module_disparity = self.stereo_estimator(costs)
 
@@ -298,7 +299,6 @@ class ModuleM(tf.keras.Model):
         disp = self.final_disparity if self.final_disparity is not None else self.module_disparity
 
         return disp, reprojection_loss
-
 
 
 
@@ -375,79 +375,106 @@ class MADNet(tf.keras.Model):
     def train_step(self, inputs):
         print("\nInside train_step MADNet")
         # Left and right image inputs
-        print(f"Inputs: {inputs}")
+        #print(f"Inputs: {inputs}")
 
         left_input = inputs[0]["left_input"]
         right_input = inputs[0]["right_input"]        
 
         print(f"Left input: {left_input.shape}")
         print(f"Right input: {right_input.shape}")
+        with tf.GradientTape(persistent=True) as tape:
+            #######################PYRAMID FEATURES###############################
+            # Left image feature pyramid (feature extractor)
+            # F1
+            left_F01 = self.left_conv1(left_input)
+            left_F1 = self.left_conv2(left_F01)
+            # F2
+            left_F02 = self.left_conv3(left_F1)
+            left_F2 = self.left_conv4(left_F02)
+            # F3
+            left_F03 = self.left_conv5(left_F2)
+            left_F3 = self.left_conv6(left_F03)
+            # F4
+            left_F04 = self.left_conv7(left_F3)
+            left_F4 = self.left_conv8(left_F04)
+            # F5
+            left_F05 = self.left_conv9(left_F4)
+            left_F5 = self.left_conv10(left_F05)
+            # F6
+            left_F06 = self.left_conv11(left_F5)
+            left_F6 = self.left_conv12(left_F06)
 
-        #######################PYRAMID FEATURES###############################
-        # Left image feature pyramid (feature extractor)
-        # F1
-        left_F01 = self.left_conv1(left_input)
-        left_F1 = self.left_conv2(left_F01)
-        # F2
-        left_F02 = self.left_conv3(left_F1)
-        left_F2 = self.left_conv4(left_F02)
-        # F3
-        left_F03 = self.left_conv5(left_F2)
-        left_F3 = self.left_conv6(left_F03)
-        # F4
-        left_F04 = self.left_conv7(left_F3)
-        left_F4 = self.left_conv8(left_F04)
-        # F5
-        left_F05 = self.left_conv9(left_F4)
-        left_F5 = self.left_conv10(left_F05)
-        # F6
-        left_F06 = self.left_conv11(left_F5)
-        left_F6 = self.left_conv12(left_F06)
+
+            # Right image feature pyramid (feature extractor)
+            # F1
+            right_F01 = self.right_conv1(right_input)
+            right_F1 = self.right_conv2(right_F01)
+            # F2
+            right_F02 = self.right_conv3(right_F1)
+            right_F2 = self.right_conv4(right_F02)
+            # F3
+            right_F03 = self.right_conv5(right_F2)
+            right_F3 = self.right_conv6(right_F03)
+            # F4
+            right_F04 = self.right_conv7(right_F3)
+            right_F4 = self.right_conv8(right_F04)
+            # F5
+            right_F05 = self.right_conv9(right_F4)
+            right_F5 = self.right_conv10(right_F05)
+            # F6
+            right_F06 = self.right_conv11(right_F5)
+            right_F6 = self.right_conv12(right_F06)
+
+            losses = {}
+            #############################SCALE 6#################################
+            D6, losses["D6"] = self.M6(left_F6, right_F6)               
+            ############################SCALE 5###################################
+            D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
+            ############################SCALE 4###################################
+            D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
+            ############################SCALE 3###################################
+            D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
+            ############################SCALE 2###################################
+            D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)    
 
 
-        # Right image feature pyramid (feature extractor)
-        # F1
-        right_F01 = self.right_conv1(right_input)
-        right_F1 = self.right_conv2(right_F01)
-        # F2
-        right_F02 = self.right_conv3(right_F1)
-        right_F2 = self.right_conv4(right_F02)
-        # F3
-        right_F03 = self.right_conv5(right_F2)
-        right_F3 = self.right_conv6(right_F03)
-        # F4
-        right_F04 = self.right_conv7(right_F3)
-        right_F4 = self.right_conv8(right_F04)
-        # F5
-        right_F05 = self.right_conv9(right_F4)
-        right_F5 = self.right_conv10(right_F05)
-        # F6
-        right_F06 = self.right_conv11(right_F5)
-        right_F6 = self.right_conv12(right_F06)
-
-        losses = {}
-        #############################SCALE 6#################################
-        with tf.GradientTape() as tape:
-            D6, losses["D6"] = self.M6(left_F6, right_F6)
-        M6_grads = tape.gradient(losses["D6"], self.M6.trainable_weights)
-        self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))
-        left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
-        self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
-        left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
-        self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
-        right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
-        self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
-        right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
-        self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
+            #^^^^^^^^^^^^^^^^^^^^^^^^Compute Gradients^^^^^^^^^^^^^^^^^^^^^^^^
+            print(f"\n\nComputing gradients now")
+            #############################SCALE 6#################################
+            M6_grads = tape.gradient(losses["D6"], self.M6.trainable_weights)
+            print(f"M6_grads {M6_grads}")
+            left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
+            #print(f"left_F6_grads: {left_F6_grads}")
+            left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
+            #print(f"left_F06_grads: {left_F06_grads}")
+            right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
+            #print(f"right_F6_grads: {right_F6_grads}")
+            right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
+            #print(f"right_F06_grads: {right_F06_grads}")
+                
+            ############################SCALE 5###################################
+                
+            ############################SCALE 4###################################
+             
+            ############################SCALE 3###################################
             
-        ############################SCALE 5###################################
-        D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
-        ############################SCALE 4###################################
-        D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
-        ############################SCALE 3###################################
-        D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
-        ############################SCALE 2###################################
-        D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)    
+            ############################SCALE 2###################################
+             
+
+
+
+
+
+
+
+
+        #self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
+
+        print(f"\n\nAfter applying gradients")
 
 
         return losses
@@ -532,8 +559,7 @@ class MADNet(tf.keras.Model):
                 return outputs
 
             data = next(iterator)
-            print(f"data in step_function: {data}")
-
+            #print(f"data in step_function: {data}")
 
             outputs = model.distribute_strategy.run(run_step, args=(data,))
             # outputs = reduce_per_replica(
@@ -642,29 +668,12 @@ class MADNet(tf.keras.Model):
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
 model.compile(
-    optimizer='adam'   
+    optimizer='adam', 
+    run_eagerly = True   
 )
 
 # ---------------------------------------------------------------------------
 # Train the model
-
-# left_input = np.random.random((1, image_height, image_width, 3))
-# right_input = np.random.random((1, image_height, image_width, 3))
-
-# # Normalize pixel values
-# datagen_args = dict(
-#     rescale = 1./255
-#         )
-# datagen = tf.keras.preprocessing.image.ImageDataGenerator(**datagen_args)
-# numpy_gen = tf.keras.preprocessing.image.NumpyArrayIterator(x={"left_input": left_input, "right_input": right_input}, y=None, image_data_generator=datagen, batch_size=batch_size)
-
-
-# history = model.fit(
-#     x=numpy_gen,
-#     epochs=10,
-#     verbose=2,
-#     #steps_per_epoch=steps_per_epoch
-# )
 
 # model.summary()
 #tf.keras.utils.plot_model(model, "G:/My Drive/repos/Real-time-self-adaptive-deep-stereo/images/MADNet Model Structure.png", show_layer_names=True)
@@ -722,8 +731,6 @@ class StereoGenerator(tf.keras.utils.Sequence):
         print(f"left batch: {left_batch}")
         print(f"right batch: {right_batch}")
 
-        # left_images = np.asarray([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
-        # right_images = np.asarray([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
         left_images = tf.constant([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
         right_images = tf.constant([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
         return {'left_input': left_images, 'right_input': right_images}, None
@@ -758,9 +765,7 @@ stereo_gen = StereoGenerator(
 left_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
 right_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
 
-#stereo_dataset = tf.data.Dataset.from_tensor_slices((left_input, right_input))
 stereo_dataset = tf.data.Dataset.from_tensor_slices(({'left_input': left_input, 'right_input': right_input}, None))
-
 
 stereo_dataset.element_spec
 
