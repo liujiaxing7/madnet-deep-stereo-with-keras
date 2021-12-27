@@ -1,7 +1,6 @@
 import os
 import tensorflow as tf
 import numpy as np
-import math
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
@@ -62,6 +61,8 @@ class StereoCostVolume(tf.keras.layers.Layer):
         super(StereoCostVolume, self).__init__(name=name)
 
     def call(self, c1, warp, search_range):
+
+        print("\nCall stereo cost volume")
         padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
         width = c1.shape.as_list()[2]
         max_offset = search_range * 2 + 1
@@ -73,10 +74,14 @@ class StereoCostVolume(tf.keras.layers.Layer):
             cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
             cost_vol.append(cost)
 
-        # wrapping concat in tf.Variable so that backpropagation can work
-        cost_vol = tf.Variable(tf.concat(cost_vol, axis=3)) 
+        cost_vol = tf.concat(cost_vol, axis=3)
 
-        cost_curve = tf.Variable(tf.concat([c1, cost_vol], axis=3))
+        cost_curve = tf.concat([c1, cost_vol], axis=3)
+
+        # print(f"c1: {c1.shape}")
+        # print(f"warp: {warp.shape}")
+        # print(f"cost_curve: {cost_curve.shape}")
+
         return cost_curve
 
 class BuildIndices(tf.keras.layers.Layer):
@@ -91,6 +96,9 @@ class BuildIndices(tf.keras.layers.Layer):
 
         pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
         batches_coords = np.ones((self.batch_size, height, width, 1), dtype=np.float32)
+
+        # pixel_coords = tf.ones((1, height, width, 2), dtype=tf.float32)
+        # batches_coords = tf.ones((self.batch_size, height, width, 1), dtype=tf.float32)        
 
         for i in range(0, self.batch_size):
             batches_coords[i][:][:][:] = i
@@ -167,16 +175,16 @@ class StereoContextNetwork(tf.keras.Model):
         self.add = tf.keras.layers.Add(name="context_disp")
         self.concat = tf.keras.layers.Concatenate(axis=-1)
 
-        # self.warp = Warp(name="warp_final")
-        # self.build_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)
+        self.warp = Warp(name="warp_final")
+        self.build_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)
 
     def call(self, input, disp, final_left, final_right):
         print(f"\nStarted call context network")
-        volume = tf.Variable(self.concat([input, disp]))
+        volume = self.concat([input, disp])
 
-        print(f"input: {input.shape}")
-        print(f"disp: {disp.shape}")
-        print(f"volume: {volume.shape}")
+        # print(f"input: {input.shape}")
+        # print(f"disp: {disp.shape}")
+        # print(f"volume: {volume.shape}")
 
         self.x = self.context1(volume)
         self.x = self.context2(self.x)
@@ -189,18 +197,17 @@ class StereoContextNetwork(tf.keras.Model):
         context_disp = self.add([disp, self.x])
         final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=final_left.shape[1], width=final_left.shape[2], interpolation='bilinear')(context_disp)
 
-        # # warp right image with final disparity to get final reprojection loss
-        # final_coords = self.concat([final_disparity, tf.zeros_like(final_disparity)])
-        # final_indices = self.build_indices(final_coords)
-        # # Warp the right image into the left using final disparity
-        # final_warped_left = self.warp(final_right, final_indices)    
+        # warp right image with final disparity to get final reprojection loss
+        final_coords = self.concat([final_disparity, tf.zeros_like(final_disparity)])
+        final_indices = self.build_indices(final_coords)
+        # Warp the right image into the left using final disparity
+        final_warped_left = self.warp(final_right, final_indices)    
 
-        # final_reprojection_loss = self.loss_fn(final_warped_left, final_left)
+        final_reprojection_loss = self.loss_fn(final_warped_left, final_left)
         # print(f"final_warped_left: {final_warped_left.shape}")
         # print(f"Final Reprojection Loss: {final_reprojection_loss}")         
-        # self.add_loss(final_reprojection_loss) 
 
-        return final_disparity
+        return final_disparity, final_reprojection_loss
 
 
 class StereoEstimator(tf.keras.Model):
@@ -216,7 +223,7 @@ class StereoEstimator(tf.keras.Model):
     def __init__(self, name="volume_filtering"):
         super(StereoEstimator, self).__init__(name=name)
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
-        self.x = None
+        #self.x = None
         self.disp1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")
         self.disp2 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")
         self.disp3 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp3")
@@ -247,18 +254,14 @@ class ModuleM(tf.keras.Model):
     def __init__(self, name="MX", layer="X", search_range=2, batch_size=1):
         print(f"\nStarted Initialization ModuleM {layer}")
         super(ModuleM, self).__init__(name=name)
-        self.module_disparity = None
-        self.final_disparity = None
-        self.context_disparity = None
         self.search_range = search_range
         self.batch_size = batch_size
-        self.final_reprojection_loss = None
         self.layer = layer
         self.loss_fn = SSIMLoss()
         self.cost_volume = StereoCostVolume(name=f"cost_{self.layer}")
         self.stereo_estimator = StereoEstimator(name=f"volume_filtering_{self.layer}")
 
-    def call(self, left, right, prev_disp=None, final_left=None, final_right=None):
+    def call(self, left, right, prev_disp=None):
         print(f"\nStarted call ModuleM {self.layer}")
 
         print(f"left: {left.shape}")
@@ -274,32 +277,22 @@ class ModuleM(tf.keras.Model):
             # Warp the right image into the left using upsampled disparity
             warped_left = Warp(name=f"warp_{self.layer}")(right, indices)
         else:
-            print("Inside prev disp is None")
             # No previous disparity exits, so use right image instead of warped left
             warped_left = right
-        warped_left = right
         # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
         reprojection_loss = self.loss_fn(warped_left, left)
 
-        print(f"warped_left: {warped_left.shape}")
-        print(f"Reprojection Loss: {reprojection_loss}")
+        # print(f"warped_left: {warped_left.shape}")
+        # print(f"Reprojection Loss: {reprojection_loss}")
 
         costs = self.cost_volume(left, warped_left, self.search_range)
 
         # Get the disparity using cost volume between left and warped left images
-        self.module_disparity = self.stereo_estimator(costs)
+        module_disparity = self.stereo_estimator(costs)
 
-        # Add the residual refinement network to the final layer
-        # also check if disparity was created previously (for autograph)
-        if final_left is not None and self.final_disparity is None:
-            self.final_disparity = StereoContextNetwork(batch_size=self.batch_size)(left, self.module_disparity, final_left, final_right) 
+        # print(f"module_disparity: {module_disparity.shape}")
 
-        print(f"self.module_disparity: {self.module_disparity.shape}")
-
-        disp = self.final_disparity if self.final_disparity is not None else self.module_disparity
-
-        return disp, reprojection_loss
-
+        return module_disparity, reprojection_loss
 
 
 # ------------------------------------------------------------------------
@@ -371,6 +364,8 @@ class MADNet(tf.keras.Model):
         self.M3 = ModuleM(name="M3", layer="3", search_range=self.search_range, batch_size=self.batch_size)
         ############################SCALE 2###################################
         self.M2 = ModuleM(name="M2", layer="2", search_range=self.search_range, batch_size=self.batch_size)
+        ############################REFINEMENT################################
+        self.refinement_module = StereoContextNetwork(batch_size=self.batch_size)
 
     def train_step(self, inputs):
         print("\nInside train_step MADNet")
@@ -427,7 +422,7 @@ class MADNet(tf.keras.Model):
 
             losses = {}
             #############################SCALE 6#################################
-            D6, losses["D6"] = self.M6(left_F6, right_F6)               
+            D6, losses["D6"] = self.M6(left_F6, right_F6)            
             ############################SCALE 5###################################
             D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
             ############################SCALE 4###################################
@@ -435,165 +430,229 @@ class MADNet(tf.keras.Model):
             ############################SCALE 3###################################
             D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
             ############################SCALE 2###################################
-            D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)    
+            D2, losses["D2"] = self.M2(left_F2, right_F2, D3)  
+            ############################REFINEMENT################################
+            final_disparity, losses["final_reprojection_loss"] = self.refinement_module(left_F2, D2, left_input, right_input)  
 
 
-            #^^^^^^^^^^^^^^^^^^^^^^^^Compute Gradients^^^^^^^^^^^^^^^^^^^^^^^^
-            print(f"\n\nComputing gradients now")
-            #############################SCALE 6#################################
-            M6_grads = tape.gradient(losses["D6"], self.M6.trainable_weights)
-            print(f"M6_grads {M6_grads}")
-            left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
-            #print(f"left_F6_grads: {left_F6_grads}")
-            left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
-            #print(f"left_F06_grads: {left_F06_grads}")
-            right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
-            #print(f"right_F6_grads: {right_F6_grads}")
-            right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
-            #print(f"right_F06_grads: {right_F06_grads}")
-                
-            ############################SCALE 5###################################
-                
-            ############################SCALE 4###################################
-             
-            ############################SCALE 3###################################
-            
-            ############################SCALE 2###################################
-             
+        #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
 
 
 
 
 
 
+        #^^^^^^^^^^^^^^^^^^^^^^^^Compute Gradients^^^^^^^^^^^^^^^^^^^^^^^^
+        print(f"\n\nComputing gradients now")
+        #############################SCALE 6#################################
+        left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
+        left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
+        right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
+        right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
+        # The current modules output is used in the following modules loss function 
+        M6_grads = tape.gradient(losses["D5"], self.M6.trainable_weights)        
+        ############################SCALE 5###################################
+        left_F5_grads = tape.gradient(losses["D5"], self.left_conv10.trainable_weights)
+        left_F05_grads = tape.gradient(losses["D5"], self.left_conv9.trainable_weights)
+        right_F5_grads = tape.gradient(losses["D5"], self.right_conv10.trainable_weights)
+        right_F05_grads = tape.gradient(losses["D5"], self.right_conv9.trainable_weights)
+        # The current modules output is used in the following modules loss function 
+        M5_grads = tape.gradient(losses["D4"], self.M5.trainable_weights)   
+        ############################SCALE 4###################################
+        left_F4_grads = tape.gradient(losses["D4"], self.left_conv8.trainable_weights)
+        left_F04_grads = tape.gradient(losses["D4"], self.left_conv7.trainable_weights)
+        right_F4_grads = tape.gradient(losses["D4"], self.right_conv8.trainable_weights)
+        right_F04_grads = tape.gradient(losses["D4"], self.right_conv7.trainable_weights)
+        # The current modules output is used in the following modules loss function 
+        M4_grads = tape.gradient(losses["D3"], self.M4.trainable_weights)            
+        ############################SCALE 3###################################
+        left_F3_grads = tape.gradient(losses["D3"], self.left_conv6.trainable_weights)
+        left_F03_grads = tape.gradient(losses["D3"], self.left_conv5.trainable_weights)
+        right_F3_grads = tape.gradient(losses["D3"], self.right_conv6.trainable_weights)
+        right_F03_grads = tape.gradient(losses["D3"], self.right_conv5.trainable_weights)
+        # The current modules output is used in the following modules loss function 
+        M3_grads = tape.gradient(losses["D2"], self.M3.trainable_weights)            
+        ############################SCALE 2###################################            
+        left_F2_grads = tape.gradient(losses["D2"], self.left_conv4.trainable_weights)
+        left_F02_grads = tape.gradient(losses["D2"], self.left_conv3.trainable_weights)
+        right_F2_grads = tape.gradient(losses["D2"], self.right_conv4.trainable_weights)
+        right_F02_grads = tape.gradient(losses["D2"], self.right_conv3.trainable_weights)
+        # The current modules output is used in the following modules loss function 
+        M2_grads = tape.gradient(losses["final_reprojection_loss"], self.M2.trainable_weights) 
+        ############################SCALE 1###################################
+        # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
+        left_F1_grads = tape.gradient(losses["D2"], self.left_conv2.trainable_weights)
+        left_F01_grads = tape.gradient(losses["D2"], self.left_conv1.trainable_weights)
+        right_F1_grads = tape.gradient(losses["D2"], self.right_conv2.trainable_weights)
+        right_F01_grads = tape.gradient(losses["D2"], self.right_conv1.trainable_weights)
+        ############################REFINEMENT################################
+        refinement_grads = tape.gradient(losses["final_reprojection_loss"], self.refinement_module.trainable_weights)
 
 
-        #self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))
+
+        #**************************Apply Gradients***************************
+        print("\n\nApplying gradients now")
+        #############################SCALE 6#################################
         self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
         self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
         self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
         self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
+        self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))        
+        ############################SCALE 5###################################
+        self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F5_grads, self.right_conv10.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F05_grads, self.right_conv9.trainable_weights))
+        self.optimizer.apply_gradients(zip(M5_grads, self.M5.trainable_weights))           
+        ############################SCALE 4###################################
+        self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F4_grads, self.right_conv8.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F04_grads, self.right_conv7.trainable_weights))
+        self.optimizer.apply_gradients(zip(M4_grads, self.M4.trainable_weights))  
+        ############################SCALE 3###################################
+        self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F3_grads, self.right_conv6.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F03_grads, self.right_conv5.trainable_weights))
+        self.optimizer.apply_gradients(zip(M3_grads, self.M3.trainable_weights))  
+        ############################SCALE 2###################################
+        self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F2_grads, self.right_conv4.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F02_grads, self.right_conv3.trainable_weights))
+        self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))    
+        ############################SCALE 1###################################
+        self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F1_grads, self.right_conv2.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
+        ############################REFINEMENT################################
+        self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
+
+
+
 
         print(f"\n\nAfter applying gradients")
 
 
         return losses
 
-    def make_train_function(self, force=False):
-        """Creates a function that executes one step of training.
-        This method can be overridden to support custom training logic.
-        This method is called by `Model.fit` and `Model.train_on_batch`.
-        Typically, this method directly controls `tf.function` and
-        `tf.distribute.Strategy` settings, and delegates the actual training
-        logic to `Model.train_step`.
-        This function is cached the first time `Model.fit` or
-        `Model.train_on_batch` is called. The cache is cleared whenever
-        `Model.compile` is called. You can skip the cache and generate again the
-        function with `force=True`.
-        Args:
-            force: Whether to regenerate the train function and skip the cached
-            function if available.
-        Returns:
-            Function. The function created by this method should accept a
-            `tf.data.Iterator`, and return a `dict` containing values that will
-            be passed to `tf.keras.Callbacks.on_train_batch_end`, such as
-            `{'loss': 0.2, 'accuracy': 0.7}`.
-        """
-        # helper functions
-        def _minimum_control_deps(outputs):
-            """Returns the minimum control dependencies to ensure step succeeded."""
-            if tf.executing_eagerly():
-                return []  # Control dependencies not needed.
-            outputs = tf.nest.flatten(outputs, expand_composites=True)
-            for out in outputs:
-                # Variables can't be control dependencies.
-                if not isinstance(out, tf.Variable):
-                    return [out]  # Return first Tensor or Op from outputs.
-            return []  # No viable Tensor or Op to use for control deps.
+    # def make_train_function(self, force=False):
+    #     """Creates a function that executes one step of training.
+    #     This method can be overridden to support custom training logic.
+    #     This method is called by `Model.fit` and `Model.train_on_batch`.
+    #     Typically, this method directly controls `tf.function` and
+    #     `tf.distribute.Strategy` settings, and delegates the actual training
+    #     logic to `Model.train_step`.
+    #     This function is cached the first time `Model.fit` or
+    #     `Model.train_on_batch` is called. The cache is cleared whenever
+    #     `Model.compile` is called. You can skip the cache and generate again the
+    #     function with `force=True`.
+    #     Args:
+    #         force: Whether to regenerate the train function and skip the cached
+    #         function if available.
+    #     Returns:
+    #         Function. The function created by this method should accept a
+    #         `tf.data.Iterator`, and return a `dict` containing values that will
+    #         be passed to `tf.keras.Callbacks.on_train_batch_end`, such as
+    #         `{'loss': 0.2, 'accuracy': 0.7}`.
+    #     """
+    #     # helper functions
+    #     def _minimum_control_deps(outputs):
+    #         """Returns the minimum control dependencies to ensure step succeeded."""
+    #         if tf.executing_eagerly():
+    #             return []  # Control dependencies not needed.
+    #         outputs = tf.nest.flatten(outputs, expand_composites=True)
+    #         for out in outputs:
+    #             # Variables can't be control dependencies.
+    #             if not isinstance(out, tf.Variable):
+    #                 return [out]  # Return first Tensor or Op from outputs.
+    #         return []  # No viable Tensor or Op to use for control deps.
 
-        # def reduce_per_replica(values, strategy, reduction='first'):
-        #     """Reduce PerReplica objects.
-        #     Args:
-        #         values: Structure of `PerReplica` objects or `Tensor`s. `Tensor`s are
-        #         returned as-is.
-        #         strategy: `tf.distribute.Strategy` object.
-        #         reduction: One of 'first', 'concat'.
-        #     Returns:
-        #         Structure of `Tensor`s.
-        #     """
+    #     # def reduce_per_replica(values, strategy, reduction='first'):
+    #     #     """Reduce PerReplica objects.
+    #     #     Args:
+    #     #         values: Structure of `PerReplica` objects or `Tensor`s. `Tensor`s are
+    #     #         returned as-is.
+    #     #         strategy: `tf.distribute.Strategy` object.
+    #     #         reduction: One of 'first', 'concat'.
+    #     #     Returns:
+    #     #         Structure of `Tensor`s.
+    #     #     """
 
-        #     def _reduce(v):
-        #         """Reduce a single `PerReplica` object."""
-        #         if reduction == 'concat' and _collective_all_reduce_multi_worker(strategy):
-        #             return _multi_worker_concat(v, strategy)
-        #         if not _is_per_replica_instance(v):
-        #             return v
-        #         elif reduction == 'first':
-        #             return strategy.unwrap(v)[0]
-        #         elif reduction == 'concat':
-        #             if _is_tpu_multi_host(strategy):
-        #                 return _tpu_multi_host_concat(v, strategy)a
-        #             else:
-        #                 return concat(strategy.unwrap(v))
-        #         else:
-        #             raise ValueError('`reduction` must be "first" or "concat". Received: '
-        #                             f'reduction={reduction}.')
+    #     #     def _reduce(v):
+    #     #         """Reduce a single `PerReplica` object."""
+    #     #         if reduction == 'concat' and _collective_all_reduce_multi_worker(strategy):
+    #     #             return _multi_worker_concat(v, strategy)
+    #     #         if not _is_per_replica_instance(v):
+    #     #             return v
+    #     #         elif reduction == 'first':
+    #     #             return strategy.unwrap(v)[0]
+    #     #         elif reduction == 'concat':
+    #     #             if _is_tpu_multi_host(strategy):
+    #     #                 return _tpu_multi_host_concat(v, strategy)a
+    #     #             else:
+    #     #                 return concat(strategy.unwrap(v))
+    #     #         else:
+    #     #             raise ValueError('`reduction` must be "first" or "concat". Received: '
+    #     #                             f'reduction={reduction}.')
 
-        #     return tf.nest.map_structure(_reduce, values)
-
-
-        if self.train_function is not None and not force:
-            return self.train_function
-
-        def step_function(model, iterator):
-            """Runs a single training step."""
-            print("\nInside step_function")
-            print(f"Iterator: {iterator}")
+    #     #     return tf.nest.map_structure(_reduce, values)
 
 
-            def run_step(data):
-                outputs = model.train_step(data)
-                # Ensure counter is updated only if `train_step` succeeds.
-                with tf.control_dependencies(_minimum_control_deps(outputs)):
-                    model._train_counter.assign_add(1)  # pylint: disable=protected-access
-                return outputs
+    #     if self.train_function is not None and not force:
+    #         return self.train_function
 
-            data = next(iterator)
-            #print(f"data in step_function: {data}")
+    #     def step_function(model, iterator):
+    #         """Runs a single training step."""
+    #         print("\nInside step_function")
+    #         print(f"Iterator: {iterator}")
 
-            outputs = model.distribute_strategy.run(run_step, args=(data,))
-            # outputs = reduce_per_replica(
-            #     outputs, self.distribute_strategy, reduction='first')
-            #write_scalar_summaries(outputs, step=model._train_counter)  # pylint: disable=protected-access
-            return outputs
 
-        if (self._steps_per_execution is None or
-            self._steps_per_execution.numpy().item() == 1):
+    #         def run_step(data):
+    #             outputs = model.train_step(data)
+    #             # Ensure counter is updated only if `train_step` succeeds.
+    #             with tf.control_dependencies(_minimum_control_deps(outputs)):
+    #                 model._train_counter.assign_add(1)  # pylint: disable=protected-access
+    #             return outputs
 
-            def train_function(iterator):
-                """Runs a training execution with one step."""
-                return step_function(self, iterator)
+    #         data = next(iterator)
+    #         #print(f"data in step_function: {data}")
 
-        else:
+    #         outputs = model.distribute_strategy.run(run_step, args=(data,))
+    #         # outputs = reduce_per_replica(
+    #         #     outputs, self.distribute_strategy, reduction='first')
+    #         #write_scalar_summaries(outputs, step=model._train_counter)  # pylint: disable=protected-access
+    #         return outputs
 
-            def train_function(iterator):
-                """Runs a training execution with multiple steps."""
-                for _ in tf.range(self._steps_per_execution):
-                    outputs = step_function(self, iterator)
-                return outputs
+    #     if (self._steps_per_execution is None or
+    #         self._steps_per_execution.numpy().item() == 1):
 
-        if not self.run_eagerly:
-            train_function = tf.function(
-                train_function, experimental_relax_shapes=True)
-            self.train_tf_function = train_function
+    #         def train_function(iterator):
+    #             """Runs a training execution with one step."""
+    #             return step_function(self, iterator)
 
-        self.train_function = train_function
+    #     else:
 
-        if self._cluster_coordinator:
-            self.train_function = lambda iterator: self._cluster_coordinator.schedule(  # pylint: disable=g-long-lambda
-                train_function, args=(iterator,))
+    #         def train_function(iterator):
+    #             """Runs a training execution with multiple steps."""
+    #             for _ in tf.range(self._steps_per_execution):
+    #                 outputs = step_function(self, iterator)
+    #             return outputs
 
-        return self.train_function
+    #     if not self.run_eagerly:
+    #         train_function = tf.function(
+    #             train_function, experimental_relax_shapes=True)
+    #         self.train_tf_function = train_function
+
+    #     self.train_function = train_function
+
+    #     if self._cluster_coordinator:
+    #         self.train_function = lambda iterator: self._cluster_coordinator.schedule(  # pylint: disable=g-long-lambda
+    #             train_function, args=(iterator,))
+
+    #     return self.train_function
 
 
     # Forward pass of the model
@@ -652,7 +711,7 @@ class MADNet(tf.keras.Model):
 
         losses = {}
         #############################SCALE 6#################################
-        D6, losses["D6"] = self.M6(left_F6, right_F6)
+        D6, losses["D6"] = self.M6(left_F6, right_F6)            
         ############################SCALE 5###################################
         D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
         ############################SCALE 4###################################
@@ -660,10 +719,12 @@ class MADNet(tf.keras.Model):
         ############################SCALE 3###################################
         D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
         ############################SCALE 2###################################
-        D2, losses["D2"] = self.M2(left_F2, right_F2, D3, left_input, right_input)     
+        D2, losses["D2"] = self.M2(left_F2, right_F2, D3)  
+        ############################REFINEMENT################################
+        final_disparity, losses["final_reprojection_loss"] = self.refinement_module(left_F2, D2, left_input, right_input)     
     
         print(f"Losses: \n{losses}")
-        return D2
+        return final_disparity
 
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
@@ -776,7 +837,7 @@ stereo_dataset.element_spec
 
 history = model.fit(
     x=stereo_dataset,
-    epochs=10,
+    epochs=2,
     verbose=2,
     #steps_per_epoch=steps_per_epoch
 )
