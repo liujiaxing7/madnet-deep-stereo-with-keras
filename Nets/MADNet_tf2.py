@@ -25,7 +25,6 @@ class SSIMLoss(tf.keras.losses.Loss):
         self.pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
 
     def call(self, x, y):
-        print("\nInside loss")
         C1 = 0.01**2
         C2 = 0.03**2
         mu_x = self.pool(x)
@@ -61,8 +60,6 @@ class StereoCostVolume(tf.keras.layers.Layer):
         super(StereoCostVolume, self).__init__(name=name)
 
     def call(self, c1, warp, search_range):
-
-        print("\nCall stereo cost volume")
         padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
         width = c1.shape.as_list()[2]
         max_offset = search_range * 2 + 1
@@ -77,10 +74,6 @@ class StereoCostVolume(tf.keras.layers.Layer):
         cost_vol = tf.concat(cost_vol, axis=3)
 
         cost_curve = tf.concat([c1, cost_vol], axis=3)
-
-        # print(f"c1: {c1.shape}")
-        # print(f"warp: {warp.shape}")
-        # print(f"cost_curve: {cost_curve.shape}")
 
         return cost_curve
 
@@ -179,12 +172,7 @@ class StereoContextNetwork(tf.keras.Model):
         self.build_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)
 
     def call(self, input, disp, final_left, final_right):
-        print(f"\nStarted call context network")
         volume = self.concat([input, disp])
-
-        # print(f"input: {input.shape}")
-        # print(f"disp: {disp.shape}")
-        # print(f"volume: {volume.shape}")
 
         self.x = self.context1(volume)
         self.x = self.context2(self.x)
@@ -203,9 +191,7 @@ class StereoContextNetwork(tf.keras.Model):
         # Warp the right image into the left using final disparity
         final_warped_left = self.warp(final_right, final_indices)    
 
-        final_reprojection_loss = self.loss_fn(final_warped_left, final_left)
-        # print(f"final_warped_left: {final_warped_left.shape}")
-        # print(f"Final Reprojection Loss: {final_reprojection_loss}")         
+        final_reprojection_loss = self.loss_fn(final_warped_left, final_left)      
 
         return final_disparity, final_reprojection_loss
 
@@ -282,15 +268,10 @@ class ModuleM(tf.keras.Model):
         # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
         reprojection_loss = self.loss_fn(warped_left, left)
 
-        # print(f"warped_left: {warped_left.shape}")
-        # print(f"Reprojection Loss: {reprojection_loss}")
-
         costs = self.cost_volume(left, warped_left, self.search_range)
 
         # Get the disparity using cost volume between left and warped left images
         module_disparity = self.stereo_estimator(costs)
-
-        # print(f"module_disparity: {module_disparity.shape}")
 
         return module_disparity, reprojection_loss
 
@@ -378,61 +359,8 @@ class MADNet(tf.keras.Model):
         print(f"Left input: {left_input.shape}")
         print(f"Right input: {right_input.shape}")
         with tf.GradientTape(persistent=True) as tape:
-            #######################PYRAMID FEATURES###############################
-            # Left image feature pyramid (feature extractor)
-            # F1
-            left_F01 = self.left_conv1(left_input)
-            left_F1 = self.left_conv2(left_F01)
-            # F2
-            left_F02 = self.left_conv3(left_F1)
-            left_F2 = self.left_conv4(left_F02)
-            # F3
-            left_F03 = self.left_conv5(left_F2)
-            left_F3 = self.left_conv6(left_F03)
-            # F4
-            left_F04 = self.left_conv7(left_F3)
-            left_F4 = self.left_conv8(left_F04)
-            # F5
-            left_F05 = self.left_conv9(left_F4)
-            left_F5 = self.left_conv10(left_F05)
-            # F6
-            left_F06 = self.left_conv11(left_F5)
-            left_F6 = self.left_conv12(left_F06)
-
-
-            # Right image feature pyramid (feature extractor)
-            # F1
-            right_F01 = self.right_conv1(right_input)
-            right_F1 = self.right_conv2(right_F01)
-            # F2
-            right_F02 = self.right_conv3(right_F1)
-            right_F2 = self.right_conv4(right_F02)
-            # F3
-            right_F03 = self.right_conv5(right_F2)
-            right_F3 = self.right_conv6(right_F03)
-            # F4
-            right_F04 = self.right_conv7(right_F3)
-            right_F4 = self.right_conv8(right_F04)
-            # F5
-            right_F05 = self.right_conv9(right_F4)
-            right_F5 = self.right_conv10(right_F05)
-            # F6
-            right_F06 = self.right_conv11(right_F5)
-            right_F6 = self.right_conv12(right_F06)
-
-            losses = {}
-            #############################SCALE 6#################################
-            D6, losses["D6"] = self.M6(left_F6, right_F6)            
-            ############################SCALE 5###################################
-            D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
-            ############################SCALE 4###################################
-            D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
-            ############################SCALE 3###################################
-            D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
-            ############################SCALE 2###################################
-            D2, losses["D2"] = self.M2(left_F2, right_F2, D3)  
-            ############################REFINEMENT################################
-            final_disparity, losses["final_reprojection_loss"] = self.refinement_module(left_F2, D2, left_input, right_input)  
+            # Forward pass
+            final_disparity, losses = self(inputs[0], training=True)
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
@@ -529,11 +457,6 @@ class MADNet(tf.keras.Model):
         self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
         ############################REFINEMENT################################
         self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
-
-
-
-
-        print(f"\n\nAfter applying gradients")
 
 
         return losses
@@ -723,8 +646,7 @@ class MADNet(tf.keras.Model):
         ############################REFINEMENT################################
         final_disparity, losses["final_reprojection_loss"] = self.refinement_module(left_F2, D2, left_input, right_input)     
     
-        print(f"Losses: \n{losses}")
-        return final_disparity
+        return final_disparity, losses
 
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
