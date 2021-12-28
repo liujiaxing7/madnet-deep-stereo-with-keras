@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import numpy as np
+from keras.engine import data_adapter
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
@@ -406,7 +407,7 @@ class MADNet(tf.keras.Model):
         right_F2_grads = tape.gradient(losses["D2"], self.right_conv4.trainable_weights)
         right_F02_grads = tape.gradient(losses["D2"], self.right_conv3.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M2_grads = tape.gradient(losses["final_reprojection_loss"], self.M2.trainable_weights) 
+        M2_grads = tape.gradient(losses["final_reprojection"], self.M2.trainable_weights) 
         ############################SCALE 1###################################
         # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
         left_F1_grads = tape.gradient(losses["D2"], self.left_conv2.trainable_weights)
@@ -414,7 +415,7 @@ class MADNet(tf.keras.Model):
         right_F1_grads = tape.gradient(losses["D2"], self.right_conv2.trainable_weights)
         right_F01_grads = tape.gradient(losses["D2"], self.right_conv1.trainable_weights)
         ############################REFINEMENT################################
-        refinement_grads = tape.gradient(losses["final_reprojection_loss"], self.refinement_module.trainable_weights)
+        refinement_grads = tape.gradient(losses["final_reprojection"], self.refinement_module.trainable_weights)
 
 
 
@@ -460,122 +461,6 @@ class MADNet(tf.keras.Model):
 
 
         return losses
-
-    # def make_train_function(self, force=False):
-    #     """Creates a function that executes one step of training.
-    #     This method can be overridden to support custom training logic.
-    #     This method is called by `Model.fit` and `Model.train_on_batch`.
-    #     Typically, this method directly controls `tf.function` and
-    #     `tf.distribute.Strategy` settings, and delegates the actual training
-    #     logic to `Model.train_step`.
-    #     This function is cached the first time `Model.fit` or
-    #     `Model.train_on_batch` is called. The cache is cleared whenever
-    #     `Model.compile` is called. You can skip the cache and generate again the
-    #     function with `force=True`.
-    #     Args:
-    #         force: Whether to regenerate the train function and skip the cached
-    #         function if available.
-    #     Returns:
-    #         Function. The function created by this method should accept a
-    #         `tf.data.Iterator`, and return a `dict` containing values that will
-    #         be passed to `tf.keras.Callbacks.on_train_batch_end`, such as
-    #         `{'loss': 0.2, 'accuracy': 0.7}`.
-    #     """
-    #     # helper functions
-    #     def _minimum_control_deps(outputs):
-    #         """Returns the minimum control dependencies to ensure step succeeded."""
-    #         if tf.executing_eagerly():
-    #             return []  # Control dependencies not needed.
-    #         outputs = tf.nest.flatten(outputs, expand_composites=True)
-    #         for out in outputs:
-    #             # Variables can't be control dependencies.
-    #             if not isinstance(out, tf.Variable):
-    #                 return [out]  # Return first Tensor or Op from outputs.
-    #         return []  # No viable Tensor or Op to use for control deps.
-
-    #     # def reduce_per_replica(values, strategy, reduction='first'):
-    #     #     """Reduce PerReplica objects.
-    #     #     Args:
-    #     #         values: Structure of `PerReplica` objects or `Tensor`s. `Tensor`s are
-    #     #         returned as-is.
-    #     #         strategy: `tf.distribute.Strategy` object.
-    #     #         reduction: One of 'first', 'concat'.
-    #     #     Returns:
-    #     #         Structure of `Tensor`s.
-    #     #     """
-
-    #     #     def _reduce(v):
-    #     #         """Reduce a single `PerReplica` object."""
-    #     #         if reduction == 'concat' and _collective_all_reduce_multi_worker(strategy):
-    #     #             return _multi_worker_concat(v, strategy)
-    #     #         if not _is_per_replica_instance(v):
-    #     #             return v
-    #     #         elif reduction == 'first':
-    #     #             return strategy.unwrap(v)[0]
-    #     #         elif reduction == 'concat':
-    #     #             if _is_tpu_multi_host(strategy):
-    #     #                 return _tpu_multi_host_concat(v, strategy)a
-    #     #             else:
-    #     #                 return concat(strategy.unwrap(v))
-    #     #         else:
-    #     #             raise ValueError('`reduction` must be "first" or "concat". Received: '
-    #     #                             f'reduction={reduction}.')
-
-    #     #     return tf.nest.map_structure(_reduce, values)
-
-
-    #     if self.train_function is not None and not force:
-    #         return self.train_function
-
-    #     def step_function(model, iterator):
-    #         """Runs a single training step."""
-    #         print("\nInside step_function")
-    #         print(f"Iterator: {iterator}")
-
-
-    #         def run_step(data):
-    #             outputs = model.train_step(data)
-    #             # Ensure counter is updated only if `train_step` succeeds.
-    #             with tf.control_dependencies(_minimum_control_deps(outputs)):
-    #                 model._train_counter.assign_add(1)  # pylint: disable=protected-access
-    #             return outputs
-
-    #         data = next(iterator)
-    #         #print(f"data in step_function: {data}")
-
-    #         outputs = model.distribute_strategy.run(run_step, args=(data,))
-    #         # outputs = reduce_per_replica(
-    #         #     outputs, self.distribute_strategy, reduction='first')
-    #         #write_scalar_summaries(outputs, step=model._train_counter)  # pylint: disable=protected-access
-    #         return outputs
-
-    #     if (self._steps_per_execution is None or
-    #         self._steps_per_execution.numpy().item() == 1):
-
-    #         def train_function(iterator):
-    #             """Runs a training execution with one step."""
-    #             return step_function(self, iterator)
-
-    #     else:
-
-    #         def train_function(iterator):
-    #             """Runs a training execution with multiple steps."""
-    #             for _ in tf.range(self._steps_per_execution):
-    #                 outputs = step_function(self, iterator)
-    #             return outputs
-
-    #     if not self.run_eagerly:
-    #         train_function = tf.function(
-    #             train_function, experimental_relax_shapes=True)
-    #         self.train_tf_function = train_function
-
-    #     self.train_function = train_function
-
-    #     if self._cluster_coordinator:
-    #         self.train_function = lambda iterator: self._cluster_coordinator.schedule(  # pylint: disable=g-long-lambda
-    #             train_function, args=(iterator,))
-
-    #     return self.train_function
 
 
     # Forward pass of the model
@@ -644,9 +529,143 @@ class MADNet(tf.keras.Model):
         ############################SCALE 2###################################
         D2, losses["D2"] = self.M2(left_F2, right_F2, D3)  
         ############################REFINEMENT################################
-        final_disparity, losses["final_reprojection_loss"] = self.refinement_module(left_F2, D2, left_input, right_input)     
+        final_disparity, losses["final_reprojection"] = self.refinement_module(left_F2, D2, left_input, right_input)     
     
         return final_disparity, losses
+
+    def predict_step(self, data):
+        """The logic for one inference step.
+        This method can be overridden to support custom inference logic.
+        This method is called by `Model.make_predict_function`.
+        This method should contain the mathematical logic for one step of inference.
+        This typically includes the forward pass.
+        Configuration details for *how* this logic is run (e.g. `tf.function` and
+        `tf.distribute.Strategy` settings), should be left to
+        `Model.make_predict_function`, which can also be overridden.
+        Args:
+            data: A nested structure of `Tensor`s.
+        Returns:
+            The result of one inference step, typically the output of calling the
+            `Model` on data.
+        """
+        x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+        with tf.GradientTape(persistent=True) as tape:
+            # Forward pass
+            final_disparity, losses = self(x, training=True)
+
+
+        #((((((((((((((((((((((((Select module for adaptation))))))))))))))))))))))))
+        # Convert losses to a probability distribution for Modular adaptation
+        H = tf.nn.softmax(list(losses.values()))
+        best_prob = max(H)
+
+        H_dict = {key: value for key, value in zip(list(losses.keys()), H)}
+        print(f"\nH_dict: {H_dict}")
+        # Only selecting the module with the highest probability (this can be changed to select multiple modules)
+        adaptation_dict = {key: True if value == best_prob else False for key, value in H_dict.items()}
+        print(f"adaptation_dict: {adaptation_dict}")
+
+
+
+        #^^^^^^^^^^^^^^^^^^^^^^^^Compute + Apply Gradients^^^^^^^^^^^^^^^^^^^^^^^^
+        print(f"\n\nComputing gradients now")
+        if adaptation_dict["D6"]:
+            #############################SCALE 6#################################
+            left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
+            left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
+            right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
+            right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
+            # The current modules output is used in the following modules loss function 
+            M6_grads = tape.gradient(losses["D5"], self.M6.trainable_weights) 
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
+            self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))             
+        
+        if adaptation_dict["D5"]:
+            ############################SCALE 5###################################
+            left_F5_grads = tape.gradient(losses["D5"], self.left_conv10.trainable_weights)
+            left_F05_grads = tape.gradient(losses["D5"], self.left_conv9.trainable_weights)
+            right_F5_grads = tape.gradient(losses["D5"], self.right_conv10.trainable_weights)
+            right_F05_grads = tape.gradient(losses["D5"], self.right_conv9.trainable_weights)
+            # The current modules output is used in the following modules loss function 
+            M5_grads = tape.gradient(losses["D4"], self.M5.trainable_weights)   
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F5_grads, self.right_conv10.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F05_grads, self.right_conv9.trainable_weights))
+            self.optimizer.apply_gradients(zip(M5_grads, self.M5.trainable_weights))  
+
+        if adaptation_dict["D4"]:
+            ############################SCALE 4###################################
+            left_F4_grads = tape.gradient(losses["D4"], self.left_conv8.trainable_weights)
+            left_F04_grads = tape.gradient(losses["D4"], self.left_conv7.trainable_weights)
+            right_F4_grads = tape.gradient(losses["D4"], self.right_conv8.trainable_weights)
+            right_F04_grads = tape.gradient(losses["D4"], self.right_conv7.trainable_weights)
+            # The current modules output is used in the following modules loss function 
+            M4_grads = tape.gradient(losses["D3"], self.M4.trainable_weights)     
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F4_grads, self.right_conv8.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F04_grads, self.right_conv7.trainable_weights))
+            self.optimizer.apply_gradients(zip(M4_grads, self.M4.trainable_weights))         
+        
+        if adaptation_dict["D3"]:
+            ############################SCALE 3###################################
+            left_F3_grads = tape.gradient(losses["D3"], self.left_conv6.trainable_weights)
+            left_F03_grads = tape.gradient(losses["D3"], self.left_conv5.trainable_weights)
+            right_F3_grads = tape.gradient(losses["D3"], self.right_conv6.trainable_weights)
+            right_F03_grads = tape.gradient(losses["D3"], self.right_conv5.trainable_weights)
+            # The current modules output is used in the following modules loss function 
+            M3_grads = tape.gradient(losses["D2"], self.M3.trainable_weights)            
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F3_grads, self.right_conv6.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F03_grads, self.right_conv5.trainable_weights))
+            self.optimizer.apply_gradients(zip(M3_grads, self.M3.trainable_weights))      
+
+        if adaptation_dict["D2"]: 
+            ############################SCALE 2###################################           
+            left_F2_grads = tape.gradient(losses["D2"], self.left_conv4.trainable_weights)
+            left_F02_grads = tape.gradient(losses["D2"], self.left_conv3.trainable_weights)
+            right_F2_grads = tape.gradient(losses["D2"], self.right_conv4.trainable_weights)
+            right_F02_grads = tape.gradient(losses["D2"], self.right_conv3.trainable_weights)
+            # The current modules output is used in the following modules loss function 
+            M2_grads = tape.gradient(losses["final_reprojection"], self.M2.trainable_weights) 
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F2_grads, self.right_conv4.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F02_grads, self.right_conv3.trainable_weights))
+            self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))    
+            ############################SCALE 1###################################
+            # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
+            left_F1_grads = tape.gradient(losses["D2"], self.left_conv2.trainable_weights)
+            left_F01_grads = tape.gradient(losses["D2"], self.left_conv1.trainable_weights)
+            right_F1_grads = tape.gradient(losses["D2"], self.right_conv2.trainable_weights)
+            right_F01_grads = tape.gradient(losses["D2"], self.right_conv1.trainable_weights)
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
+            self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F1_grads, self.right_conv2.trainable_weights))
+            self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
+        
+        if adaptation_dict["final_reprojection"]:
+            ############################REFINEMENT################################
+            refinement_grads = tape.gradient(losses["final_reprojection"], self.refinement_module.trainable_weights)
+            # Applying gradients
+            self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
+
+
+        return final_disparity
+
+
+
 
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
@@ -757,9 +776,13 @@ stereo_dataset.element_spec
 
 
 
-history = model.fit(
-    x=stereo_dataset,
-    epochs=2,
-    verbose=2,
-    #steps_per_epoch=steps_per_epoch
-)
+# history = model.fit(
+#     x=stereo_dataset,
+#     epochs=2,
+#     verbose=2,
+#     #steps_per_epoch=5
+# )
+
+
+disparity = model.predict(stereo_dataset)
+
