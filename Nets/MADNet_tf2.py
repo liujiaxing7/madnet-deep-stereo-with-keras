@@ -1,7 +1,9 @@
 import os
 import tensorflow as tf
 import numpy as np
+from random import shuffle
 from keras.engine import data_adapter
+import cv2
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
@@ -11,8 +13,13 @@ image_height = 320
 image_width = 1216
 input_size = (image_height, image_width)
 batch_size = 1 # Set batch size to none to have a variable batch size
-
 search_range = 2 # maximum dispacement (ie. smallest disparity)
+
+left_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/left"
+right_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/right"
+left_disp_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/disparity/left"
+
+
 
 class SSIMLoss(tf.keras.losses.Loss):
     """
@@ -291,6 +298,7 @@ class MADNet(tf.keras.Model):
         self.batch_size = batch_size
         self.search_range = search_range
         self.batch_size = batch_size
+        self.losses = {}
 
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         # Left image feature pyramid (feature extractor)
@@ -361,7 +369,7 @@ class MADNet(tf.keras.Model):
         print(f"Right input: {right_input.shape}")
         with tf.GradientTape(persistent=True) as tape:
             # Forward pass
-            final_disparity, losses = self(inputs[0], training=True)
+            final_disparity = self(inputs[0], training=True)
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
@@ -374,48 +382,48 @@ class MADNet(tf.keras.Model):
         #^^^^^^^^^^^^^^^^^^^^^^^^Compute Gradients^^^^^^^^^^^^^^^^^^^^^^^^
         print(f"\n\nComputing gradients now")
         #############################SCALE 6#################################
-        left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
-        left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
-        right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
-        right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
+        left_F6_grads = tape.gradient(self.losses["D6"], self.left_conv12.trainable_weights)
+        left_F06_grads = tape.gradient(self.losses["D6"], self.left_conv11.trainable_weights)
+        right_F6_grads = tape.gradient(self.losses["D6"], self.right_conv12.trainable_weights)
+        right_F06_grads = tape.gradient(self.losses["D6"], self.right_conv11.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M6_grads = tape.gradient(losses["D5"], self.M6.trainable_weights)        
+        M6_grads = tape.gradient(self.losses["D5"], self.M6.trainable_weights)        
         ############################SCALE 5###################################
-        left_F5_grads = tape.gradient(losses["D5"], self.left_conv10.trainable_weights)
-        left_F05_grads = tape.gradient(losses["D5"], self.left_conv9.trainable_weights)
-        right_F5_grads = tape.gradient(losses["D5"], self.right_conv10.trainable_weights)
-        right_F05_grads = tape.gradient(losses["D5"], self.right_conv9.trainable_weights)
+        left_F5_grads = tape.gradient(self.losses["D5"], self.left_conv10.trainable_weights)
+        left_F05_grads = tape.gradient(self.losses["D5"], self.left_conv9.trainable_weights)
+        right_F5_grads = tape.gradient(self.losses["D5"], self.right_conv10.trainable_weights)
+        right_F05_grads = tape.gradient(self.losses["D5"], self.right_conv9.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M5_grads = tape.gradient(losses["D4"], self.M5.trainable_weights)   
+        M5_grads = tape.gradient(self.losses["D4"], self.M5.trainable_weights)   
         ############################SCALE 4###################################
-        left_F4_grads = tape.gradient(losses["D4"], self.left_conv8.trainable_weights)
-        left_F04_grads = tape.gradient(losses["D4"], self.left_conv7.trainable_weights)
-        right_F4_grads = tape.gradient(losses["D4"], self.right_conv8.trainable_weights)
-        right_F04_grads = tape.gradient(losses["D4"], self.right_conv7.trainable_weights)
+        left_F4_grads = tape.gradient(self.losses["D4"], self.left_conv8.trainable_weights)
+        left_F04_grads = tape.gradient(self.losses["D4"], self.left_conv7.trainable_weights)
+        right_F4_grads = tape.gradient(self.losses["D4"], self.right_conv8.trainable_weights)
+        right_F04_grads = tape.gradient(self.losses["D4"], self.right_conv7.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M4_grads = tape.gradient(losses["D3"], self.M4.trainable_weights)            
+        M4_grads = tape.gradient(self.losses["D3"], self.M4.trainable_weights)            
         ############################SCALE 3###################################
-        left_F3_grads = tape.gradient(losses["D3"], self.left_conv6.trainable_weights)
-        left_F03_grads = tape.gradient(losses["D3"], self.left_conv5.trainable_weights)
-        right_F3_grads = tape.gradient(losses["D3"], self.right_conv6.trainable_weights)
-        right_F03_grads = tape.gradient(losses["D3"], self.right_conv5.trainable_weights)
+        left_F3_grads = tape.gradient(self.losses["D3"], self.left_conv6.trainable_weights)
+        left_F03_grads = tape.gradient(self.losses["D3"], self.left_conv5.trainable_weights)
+        right_F3_grads = tape.gradient(self.losses["D3"], self.right_conv6.trainable_weights)
+        right_F03_grads = tape.gradient(self.losses["D3"], self.right_conv5.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M3_grads = tape.gradient(losses["D2"], self.M3.trainable_weights)            
+        M3_grads = tape.gradient(self.losses["D2"], self.M3.trainable_weights)            
         ############################SCALE 2###################################            
-        left_F2_grads = tape.gradient(losses["D2"], self.left_conv4.trainable_weights)
-        left_F02_grads = tape.gradient(losses["D2"], self.left_conv3.trainable_weights)
-        right_F2_grads = tape.gradient(losses["D2"], self.right_conv4.trainable_weights)
-        right_F02_grads = tape.gradient(losses["D2"], self.right_conv3.trainable_weights)
+        left_F2_grads = tape.gradient(self.losses["D2"], self.left_conv4.trainable_weights)
+        left_F02_grads = tape.gradient(self.losses["D2"], self.left_conv3.trainable_weights)
+        right_F2_grads = tape.gradient(self.losses["D2"], self.right_conv4.trainable_weights)
+        right_F02_grads = tape.gradient(self.losses["D2"], self.right_conv3.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M2_grads = tape.gradient(losses["final_reprojection"], self.M2.trainable_weights) 
+        M2_grads = tape.gradient(self.losses["final_reprojection"], self.M2.trainable_weights) 
         ############################SCALE 1###################################
         # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
-        left_F1_grads = tape.gradient(losses["D2"], self.left_conv2.trainable_weights)
-        left_F01_grads = tape.gradient(losses["D2"], self.left_conv1.trainable_weights)
-        right_F1_grads = tape.gradient(losses["D2"], self.right_conv2.trainable_weights)
-        right_F01_grads = tape.gradient(losses["D2"], self.right_conv1.trainable_weights)
+        left_F1_grads = tape.gradient(self.losses["D2"], self.left_conv2.trainable_weights)
+        left_F01_grads = tape.gradient(self.losses["D2"], self.left_conv1.trainable_weights)
+        right_F1_grads = tape.gradient(self.losses["D2"], self.right_conv2.trainable_weights)
+        right_F01_grads = tape.gradient(self.losses["D2"], self.right_conv1.trainable_weights)
         ############################REFINEMENT################################
-        refinement_grads = tape.gradient(losses["final_reprojection"], self.refinement_module.trainable_weights)
+        refinement_grads = tape.gradient(self.losses["final_reprojection"], self.refinement_module.trainable_weights)
 
 
 
@@ -460,7 +468,7 @@ class MADNet(tf.keras.Model):
         self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
 
-        return losses
+        return self.losses
 
 
     # Forward pass of the model
@@ -517,21 +525,20 @@ class MADNet(tf.keras.Model):
         self.right_pyramid = self.right_conv11(right_F5)
         right_F6 = self.right_conv12(self.right_pyramid)
 
-        losses = {}
         #############################SCALE 6#################################
-        D6, losses["D6"] = self.M6(left_F6, right_F6)            
+        D6, self.losses["D6"] = self.M6(left_F6, right_F6)            
         ############################SCALE 5###################################
-        D5, losses["D5"] = self.M5(left_F5, right_F5, D6)       
+        D5, self.losses["D5"] = self.M5(left_F5, right_F5, D6)       
         ############################SCALE 4###################################
-        D4, losses["D4"] = self.M4(left_F4, right_F4, D5) 
+        D4, self.losses["D4"] = self.M4(left_F4, right_F4, D5) 
         ############################SCALE 3###################################
-        D3, losses["D3"] = self.M3(left_F3, right_F3, D4)
+        D3, self.losses["D3"] = self.M3(left_F3, right_F3, D4)
         ############################SCALE 2###################################
-        D2, losses["D2"] = self.M2(left_F2, right_F2, D3)  
+        D2, self.losses["D2"] = self.M2(left_F2, right_F2, D3)  
         ############################REFINEMENT################################
-        final_disparity, losses["final_reprojection"] = self.refinement_module(left_F2, D2, left_input, right_input)     
+        final_disparity, self.losses["final_reprojection"] = self.refinement_module(left_F2, D2, left_input, right_input)     
     
-        return final_disparity, losses
+        return final_disparity
 
     def predict_step(self, data):
         """The logic for one inference step.
@@ -551,15 +558,15 @@ class MADNet(tf.keras.Model):
         x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
         with tf.GradientTape(persistent=True) as tape:
             # Forward pass
-            final_disparity, losses = self(x, training=True)
+            final_disparity = self(x, training=True)
 
 
         #((((((((((((((((((((((((Select module for adaptation))))))))))))))))))))))))
         # Convert losses to a probability distribution for Modular adaptation
-        H = tf.nn.softmax(list(losses.values()))
+        H = tf.nn.softmax(list(self.losses.values()))
         best_prob = max(H)
 
-        H_dict = {key: value for key, value in zip(list(losses.keys()), H)}
+        H_dict = {key: value for key, value in zip(list(self.losses.keys()), H)}
         print(f"\nH_dict: {H_dict}")
         # Only selecting the module with the highest probability (this can be changed to select multiple modules)
         adaptation_dict = {key: True if value == best_prob else False for key, value in H_dict.items()}
@@ -571,12 +578,12 @@ class MADNet(tf.keras.Model):
         print(f"\n\nComputing gradients now")
         if adaptation_dict["D6"]:
             #############################SCALE 6#################################
-            left_F6_grads = tape.gradient(losses["D6"], self.left_conv12.trainable_weights)
-            left_F06_grads = tape.gradient(losses["D6"], self.left_conv11.trainable_weights)
-            right_F6_grads = tape.gradient(losses["D6"], self.right_conv12.trainable_weights)
-            right_F06_grads = tape.gradient(losses["D6"], self.right_conv11.trainable_weights)
+            left_F6_grads = tape.gradient(self.losses["D6"], self.left_conv12.trainable_weights)
+            left_F06_grads = tape.gradient(self.losses["D6"], self.left_conv11.trainable_weights)
+            right_F6_grads = tape.gradient(self.losses["D6"], self.right_conv12.trainable_weights)
+            right_F06_grads = tape.gradient(self.losses["D6"], self.right_conv11.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M6_grads = tape.gradient(losses["D5"], self.M6.trainable_weights) 
+            M6_grads = tape.gradient(self.losses["D5"], self.M6.trainable_weights) 
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
@@ -586,12 +593,12 @@ class MADNet(tf.keras.Model):
         
         if adaptation_dict["D5"]:
             ############################SCALE 5###################################
-            left_F5_grads = tape.gradient(losses["D5"], self.left_conv10.trainable_weights)
-            left_F05_grads = tape.gradient(losses["D5"], self.left_conv9.trainable_weights)
-            right_F5_grads = tape.gradient(losses["D5"], self.right_conv10.trainable_weights)
-            right_F05_grads = tape.gradient(losses["D5"], self.right_conv9.trainable_weights)
+            left_F5_grads = tape.gradient(self.losses["D5"], self.left_conv10.trainable_weights)
+            left_F05_grads = tape.gradient(self.losses["D5"], self.left_conv9.trainable_weights)
+            right_F5_grads = tape.gradient(self.losses["D5"], self.right_conv10.trainable_weights)
+            right_F05_grads = tape.gradient(self.losses["D5"], self.right_conv9.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M5_grads = tape.gradient(losses["D4"], self.M5.trainable_weights)   
+            M5_grads = tape.gradient(self.losses["D4"], self.M5.trainable_weights)   
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
@@ -601,12 +608,12 @@ class MADNet(tf.keras.Model):
 
         if adaptation_dict["D4"]:
             ############################SCALE 4###################################
-            left_F4_grads = tape.gradient(losses["D4"], self.left_conv8.trainable_weights)
-            left_F04_grads = tape.gradient(losses["D4"], self.left_conv7.trainable_weights)
-            right_F4_grads = tape.gradient(losses["D4"], self.right_conv8.trainable_weights)
-            right_F04_grads = tape.gradient(losses["D4"], self.right_conv7.trainable_weights)
+            left_F4_grads = tape.gradient(self.losses["D4"], self.left_conv8.trainable_weights)
+            left_F04_grads = tape.gradient(self.losses["D4"], self.left_conv7.trainable_weights)
+            right_F4_grads = tape.gradient(self.losses["D4"], self.right_conv8.trainable_weights)
+            right_F04_grads = tape.gradient(self.losses["D4"], self.right_conv7.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M4_grads = tape.gradient(losses["D3"], self.M4.trainable_weights)     
+            M4_grads = tape.gradient(self.losses["D3"], self.M4.trainable_weights)     
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
@@ -616,12 +623,12 @@ class MADNet(tf.keras.Model):
         
         if adaptation_dict["D3"]:
             ############################SCALE 3###################################
-            left_F3_grads = tape.gradient(losses["D3"], self.left_conv6.trainable_weights)
-            left_F03_grads = tape.gradient(losses["D3"], self.left_conv5.trainable_weights)
-            right_F3_grads = tape.gradient(losses["D3"], self.right_conv6.trainable_weights)
-            right_F03_grads = tape.gradient(losses["D3"], self.right_conv5.trainable_weights)
+            left_F3_grads = tape.gradient(self.losses["D3"], self.left_conv6.trainable_weights)
+            left_F03_grads = tape.gradient(self.losses["D3"], self.left_conv5.trainable_weights)
+            right_F3_grads = tape.gradient(self.losses["D3"], self.right_conv6.trainable_weights)
+            right_F03_grads = tape.gradient(self.losses["D3"], self.right_conv5.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M3_grads = tape.gradient(losses["D2"], self.M3.trainable_weights)            
+            M3_grads = tape.gradient(self.losses["D2"], self.M3.trainable_weights)            
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
@@ -631,12 +638,12 @@ class MADNet(tf.keras.Model):
 
         if adaptation_dict["D2"]: 
             ############################SCALE 2###################################           
-            left_F2_grads = tape.gradient(losses["D2"], self.left_conv4.trainable_weights)
-            left_F02_grads = tape.gradient(losses["D2"], self.left_conv3.trainable_weights)
-            right_F2_grads = tape.gradient(losses["D2"], self.right_conv4.trainable_weights)
-            right_F02_grads = tape.gradient(losses["D2"], self.right_conv3.trainable_weights)
+            left_F2_grads = tape.gradient(self.losses["D2"], self.left_conv4.trainable_weights)
+            left_F02_grads = tape.gradient(self.losses["D2"], self.left_conv3.trainable_weights)
+            right_F2_grads = tape.gradient(self.losses["D2"], self.right_conv4.trainable_weights)
+            right_F02_grads = tape.gradient(self.losses["D2"], self.right_conv3.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M2_grads = tape.gradient(losses["final_reprojection"], self.M2.trainable_weights) 
+            M2_grads = tape.gradient(self.losses["final_reprojection"], self.M2.trainable_weights) 
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
@@ -645,10 +652,10 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))    
             ############################SCALE 1###################################
             # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
-            left_F1_grads = tape.gradient(losses["D2"], self.left_conv2.trainable_weights)
-            left_F01_grads = tape.gradient(losses["D2"], self.left_conv1.trainable_weights)
-            right_F1_grads = tape.gradient(losses["D2"], self.right_conv2.trainable_weights)
-            right_F01_grads = tape.gradient(losses["D2"], self.right_conv1.trainable_weights)
+            left_F1_grads = tape.gradient(self.losses["D2"], self.left_conv2.trainable_weights)
+            left_F01_grads = tape.gradient(self.losses["D2"], self.left_conv1.trainable_weights)
+            right_F1_grads = tape.gradient(self.losses["D2"], self.right_conv2.trainable_weights)
+            right_F01_grads = tape.gradient(self.losses["D2"], self.right_conv1.trainable_weights)
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
@@ -657,7 +664,7 @@ class MADNet(tf.keras.Model):
         
         if adaptation_dict["final_reprojection"]:
             ############################REFINEMENT################################
-            refinement_grads = tape.gradient(losses["final_reprojection"], self.refinement_module.trainable_weights)
+            refinement_grads = tape.gradient(self.losses["final_reprojection"], self.refinement_module.trainable_weights)
             # Applying gradients
             self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
@@ -683,7 +690,6 @@ model.compile(
 
 # --------------------------------------------------------------------------------
 # Data Preperation
-
 
 class StereoGenerator(tf.keras.utils.Sequence):
     """
@@ -738,9 +744,6 @@ class StereoGenerator(tf.keras.utils.Sequence):
         return {'left_input': left_images, 'right_input': right_images}, None
 
 
-left_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/left/data"
-right_dir = "G:/My Drive/Data Files/2011_09_26_drive_0002_sync/right/data"
-
 # steps_per_epoch = math.ceil(left_generator.samples / batch_size)        
 
 stereo_gen = StereoGenerator(
@@ -752,37 +755,170 @@ stereo_gen = StereoGenerator(
     shuffle=False
     ) 
 
-# gen = lambda: (image for image in stereo_gen)
 
-# # Convert generator to tf.data.Dataset
-# stereo_dataset = tf.data.Dataset.from_generator(
-#     gen,
-#     output_signature=(
-#         {'left_input': tf.TensorSpec(shape=[None, None, None, None]), 'right_input': tf.TensorSpec(shape=[None, None, None, None])},
-#         #tf.TensorSpec(shape=[None])
-#     )
-# )
+class StereoDatasetCreator():
+    """
+    Takes paths to left and right stereo image directories
+    and creates a dataset that returns a batch of left 
+    and right images, (Optional) returns the disparities as a target
+    using the disparities directories.
+    
+    """
+    def __init__(self, left_dir, right_dir, batch_size, height, width, shuffle, disp_dir=None):
+        self.left_dir = left_dir
+        self.right_dir = right_dir
+        self.disp_dir = disp_dir
+        self.batch_size = batch_size
+        self.height = height
+        self.width = width
+        self.shuffle = shuffle
+
+        self.left_names = tf.constant([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")])
+        self.right_names = tf.constant([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
+        if self.disp_dir is not None:
+            self.disp_names = tf.constant([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
+
+        # Check that there is a left image for every right image
+        self.num_left = len(self.left_names)
+        self.num_right = len(self.right_names)
+        if self.num_left != self.num_right:
+            raise ValueError(f"Number of right and left images do now match. Left number: {self.num_left}. Right number: {self.num_right}")
+        # Check if images names are identical
+        # self.left_names.sort()
+        # self.right_names.sort()
+        # if self.left_names.all() != self.right_names.all():
+        #     raise ValueError("Left and right image names do not match. Please make sure left and right image names are identical")
+
+    def __get_image(self, path):
+        # get a single image helper function
+        # Using tf.io.read_file since it can take a tensor as input
+        raw = tf.io.read_file(path)
+        image = tf.io.decode_image(raw)
+        image = tf.image.convert_image_dtype(image, tf.float32)
+        return image/255.
+
+    def readPFM(file):
+        """
+        Load a pfm file as a numpy array
+        Args:
+            file: path to the file to be loaded
+        Returns:
+            content of the file as a numpy array
+        """
+        file = open(file, 'rb')
+
+        color = None
+        width = None
+        height = None
+        scale = None
+        endian = None
+
+        header = file.readline().rstrip()
+        if header == b'PF':
+            color = True
+        elif header == b'Pf':
+            color = False
+        else:
+            raise Exception('Not a PFM file.')
+
+        dims = file.readline()
+        try:
+            width, height = list(map(int, dims.split()))
+        except:
+            raise Exception('Malformed PFM header.')
+
+        scale = float(file.readline().rstrip())
+        if scale < 0:  # little-endian
+            endian = '<'
+            scale = -scale
+        else:
+            endian = '>'  # big-endian
+
+        data = np.fromfile(file, endian + 'f')
+        shape = (height, width, 3) if color else (height, width, 1)
+
+        data = np.reshape(data, shape)
+        data = np.flipud(data)
+        return data, scale
+
+    def __get_pfm(self, path):
+        """
+        Reads a single pfm disparity file and
+        returns a numpy disparity map
+        Args:
+            pfm_dir: path to the disparity directory
+            pfm_name: disparity filename
+        Returns:
+            disparity map as a numpy array
+        """
+        # Convert tensor to a string
+        path = path.numpy().decode("ascii")
+
+        disp_map = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        # Set inf values to 0 (0 is infinitely far away, so basically the same)
+        disp_map[disp_map==np.inf] = 0
+        # Normalize
+        disp_map = disp_map/256.0
+        # convert values to positive
+        if disp_map.mean() < 0:
+            disp_map *= -1
+        # make sure the format is (width, height, channels)
+        disp_map = tf.expand_dims(disp_map, axis=-1)
+        return disp_map
+
+    def __process_single_batch(self, index):
+        left_name = self.left_names[index]
+        right_name = self.right_names[index]
+        left_image = self.__get_image(f"{self.left_dir}/" +  left_name)
+        right_image = self.__get_image(f"{self.right_dir}/" + right_name)
+
+        disp_map = None  
+        if self.disp_dir is not None:
+            disp_name = self.disp_names[index]  
+            # wrapping in py_function so that the function can execute eagerly and run non tensor ops
+            disp_map = tf.py_function(func=self.__get_pfm, inp=[f"{self.disp_dir}/" + disp_name], Tout=tf.float32)
+
+        return {'left_input': left_image, 'right_input': right_image}, disp_map
 
 
-left_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
-right_input = tf.constant(np.random.random((1, 1, image_height, image_width, 3)), dtype=tf.float32)
-
-stereo_dataset = tf.data.Dataset.from_tensor_slices(({'left_input': left_input, 'right_input': right_input}, None))
-
-stereo_dataset.element_spec
-
-
-
-
+    def __call__(self):
+        indexes = list(range(self.num_left))
+        if self.shuffle == True:
+            indexes = shuffle(indexes)
+        
+        indexes_ds = tf.data.Dataset.from_tensor_slices(indexes)
+        ds = indexes_ds.map(self.__process_single_batch)
+        return ds
 
 
-# history = model.fit(
-#     x=stereo_dataset,
-#     epochs=2,
-#     verbose=2,
-#     #steps_per_epoch=5
-# )
 
 
-disparity = model.predict(stereo_dataset)
+
+stereo_dataset = StereoDatasetCreator(
+    left_dir=left_dir, 
+    right_dir=right_dir, 
+    batch_size=batch_size, 
+    height=image_height, 
+    width=image_width,
+    shuffle=False,
+    disp_dir=left_disp_dir
+    ) 
+
+
+
+train_ds = stereo_dataset()
+
+train_ds.element_spec
+
+
+
+history = model.fit(
+    x=stereo_dataset,
+    epochs=2,
+    verbose=2,
+    #steps_per_epoch=5
+)
+
+
+# disparity = model.predict(stereo_dataset)
 
