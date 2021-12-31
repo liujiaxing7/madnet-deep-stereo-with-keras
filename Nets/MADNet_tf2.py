@@ -179,10 +179,9 @@ class StereoContextNetwork(tf.keras.Model):
 
     def __init__(self, name="residual_refinement_network", batch_size=1):
         super(StereoContextNetwork, self).__init__(name=name)
-        print(f"\nStarted Initialization context network")
         self.batch_size = batch_size
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
-        self.final_reprojection_loss = None
+        self.loss = None
         self.x = None
         # Loss function for self-supervised training (no groundtruth disparity)
         self.loss_fn = SSIMLoss()
@@ -220,9 +219,9 @@ class StereoContextNetwork(tf.keras.Model):
         final_warped_left = self.warp(final_right, final_indices)    
 
         if training == True:
-            self.final_reprojection_loss = self.loss_fn(final_warped_left, final_left)      
+            self.loss = self.loss_fn(final_warped_left, final_left)      
 
-        return final_disparity, self.final_reprojection_loss
+        return final_disparity
 
 
 class StereoEstimator(tf.keras.Model):
@@ -238,7 +237,6 @@ class StereoEstimator(tf.keras.Model):
     def __init__(self, name="volume_filtering"):
         super(StereoEstimator, self).__init__(name=name)
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
-        #self.x = None
         self.disp1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")
         self.disp2 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")
         self.disp3 = tf.keras.layers.Conv2D(filters=96, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp3")
@@ -267,11 +265,10 @@ class ModuleM(tf.keras.Model):
     online adaptation using the MAD (Modular ADaptaion) method.
     """
     def __init__(self, name="MX", layer="X", search_range=2, batch_size=1):
-        print(f"\nStarted Initialization ModuleM {layer}")
         super(ModuleM, self).__init__(name=name)
         self.search_range = search_range
         self.batch_size = batch_size
-        self.reprojection_loss = None
+        self.loss = None
         self.layer = layer
         # Loss function for self-supervised training (no groundtruth disparity)
         self.loss_fn = SSIMLoss()
@@ -279,10 +276,6 @@ class ModuleM(tf.keras.Model):
         self.stereo_estimator = StereoEstimator(name=f"volume_filtering_{self.layer}")
 
     def call(self, left, right, prev_disp=None, training=False):
-        # print(f"\nStarted call ModuleM {self.layer}")
-
-        # print(f"left: {left.shape}")
-        # print(f"right: {right.shape}")
 
         height, width = (left.shape.as_list()[1], left.shape.as_list()[2])
         # Check if layer is the bottom of the pyramid
@@ -299,14 +292,14 @@ class ModuleM(tf.keras.Model):
 
         if training == True:
             # add loss estimating the reprojection accuracy of the pyramid level (for self supervised training/MAD)
-            self.reprojection_loss = self.loss_fn(warped_left, left)
+            self.loss = self.loss_fn(warped_left, left)
 
         costs = self.cost_volume(left, warped_left, self.search_range)
 
         # Get the disparity using cost volume between left and warped left images
         module_disparity = self.stereo_estimator(costs)
 
-        return module_disparity, self.reprojection_loss
+        return module_disparity
 
 
 # ------------------------------------------------------------------------
@@ -317,21 +310,23 @@ class MADNet(tf.keras.Model):
     """
     def __init__(self, name="MADNet", height=320, width=1216, search_range=2, batch_size=1):
         super(MADNet, self).__init__(name=name)
-        print("\nStarted Initialization MADNet")
         self.height = height
         self.width = width
         self.batch_size = batch_size
         self.search_range = search_range
         self.batch_size = batch_size
-        self.losses_dict = {}
+        # for converstion between tensor and dict
+        self.module_indexes = {"D6": 0, "D5": 1, "D4": 2, "D3": 3, "D2": 4, "final_loss": 5} 
         # Selects whether to perform MAD when running .predict
         self.MAD_predict = True 
+        # Selects the number of modules to perform MAD during predict. 
+        # Default is 1, >= 6 is full adaptation
+        self.num_adapt_modules = 1
         # Loss function for supervised training (with groundtruth)
         self.loss_fn = ReconstructionLoss() 
 
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         # Left image feature pyramid (feature extractor)
-        self.left_pyramid = None
         # F1
         self.left_conv1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv1", 
         input_shape=(self.height, self.width, 3, ))
@@ -352,7 +347,6 @@ class MADNet(tf.keras.Model):
         self.left_conv11 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="left_conv11")
         self.left_conv12 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="left_conv12")       
         # Right image feature pyramid (feature extractor)
-        self.right_pyramid = None
         # F1
         self.right_conv1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), strides=2, padding="same", activation=act, use_bias=True, name="right_conv1", 
         input_shape=(self.height, self.width, 3, ))
@@ -387,7 +381,6 @@ class MADNet(tf.keras.Model):
         self.refinement_module = StereoContextNetwork(batch_size=self.batch_size)
 
     def train_step(self, data):
-        #print("\nInside train_step MADNet")
         # Left, right image inputs and groundtruth target disparity
         #inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
         inputs, gt = data
@@ -398,10 +391,6 @@ class MADNet(tf.keras.Model):
         left_shape = left_input.shape[:3]
         right_shape = right_input.shape[:3]  
         desired_shape = (self.batch_size, self.height, self.width)
-        print(f"data: {data}")
-        # print(f"Left input: {left_shape}")
-        # print(f"Right input: {right_shape}")
-        # print(f"gt: {gt}")
 
 
         if left_shape != desired_shape or right_shape != desired_shape:
@@ -421,54 +410,54 @@ class MADNet(tf.keras.Model):
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
-        # Not selecting modules to update in train step
+        # Not selecting modules to update in train_step
         # Will either perform offline supervised adaptation
         # or full MAD (depending on whether gt images are provided)
 
         #^^^^^^^^^^^^^^^^^^^^^^^^Compute Gradients^^^^^^^^^^^^^^^^^^^^^^^^
         #############################SCALE 6#################################
-        left_F6_grads = tape.gradient(self.losses_dict["D6"], self.left_conv12.trainable_weights)
-        left_F06_grads = tape.gradient(self.losses_dict["D6"], self.left_conv11.trainable_weights)
-        right_F6_grads = tape.gradient(self.losses_dict["D6"], self.right_conv12.trainable_weights)
-        right_F06_grads = tape.gradient(self.losses_dict["D6"], self.right_conv11.trainable_weights)
+        left_F6_grads = tape.gradient(self.M6.loss, self.left_conv12.trainable_weights)
+        left_F06_grads = tape.gradient(self.M6.loss, self.left_conv11.trainable_weights)
+        right_F6_grads = tape.gradient(self.M6.loss, self.right_conv12.trainable_weights)
+        right_F06_grads = tape.gradient(self.M6.loss, self.right_conv11.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M6_grads = tape.gradient(self.losses_dict["D5"], self.M6.trainable_weights)        
+        M6_grads = tape.gradient(self.M5.loss, self.M6.trainable_weights)        
         ############################SCALE 5###################################
-        left_F5_grads = tape.gradient(self.losses_dict["D5"], self.left_conv10.trainable_weights)
-        left_F05_grads = tape.gradient(self.losses_dict["D5"], self.left_conv9.trainable_weights)
-        right_F5_grads = tape.gradient(self.losses_dict["D5"], self.right_conv10.trainable_weights)
-        right_F05_grads = tape.gradient(self.losses_dict["D5"], self.right_conv9.trainable_weights)
+        left_F5_grads = tape.gradient(self.M5.loss, self.left_conv10.trainable_weights)
+        left_F05_grads = tape.gradient(self.M5.loss, self.left_conv9.trainable_weights)
+        right_F5_grads = tape.gradient(self.M5.loss, self.right_conv10.trainable_weights)
+        right_F05_grads = tape.gradient(self.M5.loss, self.right_conv9.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M5_grads = tape.gradient(self.losses_dict["D4"], self.M5.trainable_weights)   
+        M5_grads = tape.gradient(self.M4.loss, self.M5.trainable_weights)   
         ############################SCALE 4###################################
-        left_F4_grads = tape.gradient(self.losses_dict["D4"], self.left_conv8.trainable_weights)
-        left_F04_grads = tape.gradient(self.losses_dict["D4"], self.left_conv7.trainable_weights)
-        right_F4_grads = tape.gradient(self.losses_dict["D4"], self.right_conv8.trainable_weights)
-        right_F04_grads = tape.gradient(self.losses_dict["D4"], self.right_conv7.trainable_weights)
+        left_F4_grads = tape.gradient(self.M4.loss, self.left_conv8.trainable_weights)
+        left_F04_grads = tape.gradient(self.M4.loss, self.left_conv7.trainable_weights)
+        right_F4_grads = tape.gradient(self.M4.loss, self.right_conv8.trainable_weights)
+        right_F04_grads = tape.gradient(self.M4.loss, self.right_conv7.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M4_grads = tape.gradient(self.losses_dict["D3"], self.M4.trainable_weights)            
+        M4_grads = tape.gradient(self.M3.loss, self.M4.trainable_weights)            
         ############################SCALE 3###################################
-        left_F3_grads = tape.gradient(self.losses_dict["D3"], self.left_conv6.trainable_weights)
-        left_F03_grads = tape.gradient(self.losses_dict["D3"], self.left_conv5.trainable_weights)
-        right_F3_grads = tape.gradient(self.losses_dict["D3"], self.right_conv6.trainable_weights)
-        right_F03_grads = tape.gradient(self.losses_dict["D3"], self.right_conv5.trainable_weights)
+        left_F3_grads = tape.gradient(self.M3.loss, self.left_conv6.trainable_weights)
+        left_F03_grads = tape.gradient(self.M3.loss, self.left_conv5.trainable_weights)
+        right_F3_grads = tape.gradient(self.M3.loss, self.right_conv6.trainable_weights)
+        right_F03_grads = tape.gradient(self.M3.loss, self.right_conv5.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M3_grads = tape.gradient(self.losses_dict["D2"], self.M3.trainable_weights)            
+        M3_grads = tape.gradient(self.M2.loss, self.M3.trainable_weights)            
         ############################SCALE 2###################################            
-        left_F2_grads = tape.gradient(self.losses_dict["D2"], self.left_conv4.trainable_weights)
-        left_F02_grads = tape.gradient(self.losses_dict["D2"], self.left_conv3.trainable_weights)
-        right_F2_grads = tape.gradient(self.losses_dict["D2"], self.right_conv4.trainable_weights)
-        right_F02_grads = tape.gradient(self.losses_dict["D2"], self.right_conv3.trainable_weights)
+        left_F2_grads = tape.gradient(self.M2.loss, self.left_conv4.trainable_weights)
+        left_F02_grads = tape.gradient(self.M2.loss, self.left_conv3.trainable_weights)
+        right_F2_grads = tape.gradient(self.M2.loss, self.right_conv4.trainable_weights)
+        right_F02_grads = tape.gradient(self.M2.loss, self.right_conv3.trainable_weights)
         # The current modules output is used in the following modules loss function 
-        M2_grads = tape.gradient(self.losses_dict["final_loss"], self.M2.trainable_weights) 
+        M2_grads = tape.gradient(self.refinement_module.loss, self.M2.trainable_weights) 
         ############################SCALE 1###################################
         # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
-        left_F1_grads = tape.gradient(self.losses_dict["D2"], self.left_conv2.trainable_weights)
-        left_F01_grads = tape.gradient(self.losses_dict["D2"], self.left_conv1.trainable_weights)
-        right_F1_grads = tape.gradient(self.losses_dict["D2"], self.right_conv2.trainable_weights)
-        right_F01_grads = tape.gradient(self.losses_dict["D2"], self.right_conv1.trainable_weights)
+        left_F1_grads = tape.gradient(self.M2.loss, self.left_conv2.trainable_weights)
+        left_F01_grads = tape.gradient(self.M2.loss, self.left_conv1.trainable_weights)
+        right_F1_grads = tape.gradient(self.M2.loss, self.right_conv2.trainable_weights)
+        right_F01_grads = tape.gradient(self.M2.loss, self.right_conv1.trainable_weights)
         ############################REFINEMENT################################
-        refinement_grads = tape.gradient(self.losses_dict["final_loss"], self.refinement_module.trainable_weights)
+        refinement_grads = tape.gradient(self.refinement_module.loss, self.refinement_module.trainable_weights)
 
 
         #**************************Apply Gradients***************************
@@ -510,8 +499,13 @@ class MADNet(tf.keras.Model):
         ############################REFINEMENT################################
         self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
-        return self.losses_dict
-
+        return {"D6_loss": self.M6.loss, 
+                "D5_loss": self.M5.loss, 
+                "D4_loss": self.M4.loss, 
+                "D3_loss": self.M3.loss, 
+                "D2_loss": self.M2.loss, 
+                "final_loss": self.refinement_module.loss}
+  
 
     # Forward pass of the model
     def call(self, inputs, target=None, training=False):
@@ -519,9 +513,6 @@ class MADNet(tf.keras.Model):
         # Left and right image inputs
         left_input = inputs["left_input"]
         right_input = inputs["right_input"]
-
-        # print(f"Left input: {left_input.shape}")
-        # print(f"Right input: {right_input.shape}")
 
         #######################PYRAMID FEATURES###############################
         # Left image feature pyramid (feature extractor)
@@ -566,35 +557,34 @@ class MADNet(tf.keras.Model):
         right_F6 = self.right_conv12(self.right_pyramid)
 
         #############################SCALE 6#################################
-        D6, self.losses_dict["D6"] = self.M6(left_F6, right_F6, None, training)            
+        D6 = self.M6(left_F6, right_F6, None, training)     
         ############################SCALE 5###################################
-        D5, self.losses_dict["D5"] = self.M5(left_F5, right_F5, D6, training)       
+        D5 = self.M5(left_F5, right_F5, D6, training)    
         ############################SCALE 4###################################
-        D4, self.losses_dict["D4"] = self.M4(left_F4, right_F4, D5, training) 
+        D4 = self.M4(left_F4, right_F4, D5, training) 
         ############################SCALE 3###################################
-        D3, self.losses_dict["D3"] = self.M3(left_F3, right_F3, D4, training)
+        D3 = self.M3(left_F3, right_F3, D4, training)
         ############################SCALE 2###################################
-        D2, self.losses_dict["D2"] = self.M2(left_F2, right_F2, D3, training)  
+        D2 = self.M2(left_F2, right_F2, D3, training) 
         ############################REFINEMENT################################
-        final_disparity, self.losses_dict["final_loss"] = self.refinement_module(left_F2, D2, left_input, right_input, training)  
+        final_disparity = self.refinement_module(left_F2, D2, left_input, right_input, training) 
 
-        
-        # Override warping losses using the groundtruth (if its available)
+        # Override warping losses using loss from the groundtruth (if its available)
         # For supervised training only
         if training == True and target is not None:
-            self.losses_dict["final_loss"] = self.loss_fn(target, final_disparity)
+            self.refinement_module.loss = self.loss_fn(target, final_disparity)
             # Resize groundtruth to match lower resolution layers
             # using same target and decreasing resolution for each layer
             target = tf.image.resize(target, [tf.shape(D2)[1], tf.shape(D2)[2]], method="bilinear")
-            self.losses_dict["D2"] = self.loss_fn(target, D2)
+            self.M2.loss = self.loss_fn(target, D2)
             target = tf.image.resize(target, [tf.shape(D3)[1], tf.shape(D3)[2]], method="bilinear")
-            self.losses_dict["D3"] = self.loss_fn(target, D3)
+            self.M3.loss = self.loss_fn(target, D3)
             target = tf.image.resize(target, [tf.shape(D4)[1], tf.shape(D4)[2]], method="bilinear")
-            self.losses_dict["D4"] = self.loss_fn(target, D4)
+            self.M4.loss = self.loss_fn(target, D4)
             target = tf.image.resize(target, [tf.shape(D5)[1], tf.shape(D5)[2]], method="bilinear")
-            self.losses_dict["D5"] = self.loss_fn(target, D5)
+            self.M5.loss = self.loss_fn(target, D5)
             target = tf.image.resize(target, [tf.shape(D6)[1], tf.shape(D6)[2]], method="bilinear")
-            self.losses_dict["D6"] = self.loss_fn(target, D6)            
+            self.M6.loss = self.loss_fn(target, D6)           
     
         return final_disparity
 
@@ -607,6 +597,8 @@ class MADNet(tf.keras.Model):
         MAD mode can be turned off by setting the models attribute MAD_predict = False.
         This will improve performance but the model will not improve using
         the self-supervised MAD offline training.
+        Adaption on 1-5 modules is only working with eager mode on.
+        To change models to adapt update the models attribute num_adapt_modules to 1-6.
 
         Args:
             data: A nested structure of `Tensor`s.
@@ -619,43 +611,64 @@ class MADNet(tf.keras.Model):
             final_disparity = self(x, training=self.MAD_predict)
 
 
-        #((((((((((((((((((((((((Select module for adaptation))))))))))))))))))))))))      
-        if self.MAD_predict == True:
+        #((((((((((((((((((((((((Select module/s for adaptation))))))))))))))))))))))))
+        losses = [
+                self.M6.loss, 
+                self.M5.loss,
+                self.M4.loss,
+                self.M3.loss,
+                self.M2.loss,
+                self.refinement_module.loss
+                ]
+        none_losses = [None, None, None, None, None, None]
+        if self.MAD_predict == True and self.num_adapt_modules >= 6:
+            # Full MAD, update all modules
+            adapt_losses = losses
+            adapt_dict = {"D6": True, "D5": True, "D4": True, "D3": True, "D2": True, "final_loss": True} 
+        elif self.MAD_predict == True and self.num_adapt_modules == 1:
+            # Default MAD mode
+            # This currently only works with eager execution turned on
             # Convert losses to a probability distribution for Modular adaptation
-            H = tf.nn.softmax(list(self.losses_dict.values()))
-            best_prob = tf.reduce_max(H)
+            H = tf.nn.softmax(losses)
+            adapt_index = tf.cast(tf.argmax(H), tf.int32)
 
+            adapt_dict = {"D6": False, "D5": False, "D4": False, "D3": False, "D2": False, "final_loss": False}
 
-            
-            H_dict = {key: value for key, value in zip(self.losses_dict.keys(), H)}
-            # H_dict = {}
-            # for key, value in zip(self.losses_dict.keys(), H):
-            #     H_dict[key] = value
+            for key in adapt_dict.keys():
+                # This is not graph executable (boolean unsupported op on tensor)
+                if tf.equal(self.module_indexes[key], adapt_index):
+                    adapt_dict[key] = True    
+                    break             
 
+        elif self.MAD_predict == True:
+            # Adapting only the highest probability modules 
+            # This currently only works with eager execution turned on
+            # Convert losses to a probability distribution for Modular adaptation
+            H = tf.nn.softmax(losses)
+            adapt_indexes = tf.math.top_k(H, k=self.num_adapt_modules).indices 
+            adapt_losses = tf.gather(losses, adapt_indexes)
 
-            
-            # Only selecting the module with the highest probability (this can be changed to select multiple modules)
-            adaptation_dict = {key: True if value == best_prob else False for key, value in H_dict.items()}
-            #adaptation_dict = {}
+            adapt_dict = {"D6": False, "D5": False, "D4": False, "D3": False, "D2": False, "final_loss": False}
 
-
-            # print(f"\nlosses_dict: {self.losses_dict}")
-            # print(f"H: {H}")
-            # print(f"adaptation_dict: {adaptation_dict}")
+            for key in adapt_dict.keys():
+                # This is not graph executable (tensor is not iterable)
+                if losses[self.module_indexes[key]] in adapt_losses:
+                    adapt_dict[key] = True                      
         else:
-            # Set all modules to not update
-            # adaptation_dict = {}
-            adaptation_dict = {key: False for key in self.losses_dict.keys()}
+            # No adaptation, only a forward pass is performed
+            losses = none_losses  
+            adapt_dict = {"D6": False, "D5": False, "D4": False, "D3": False, "D2": False, "final_loss": False}   
+
 
         #^^^^^^^^^^^^^^^^^^^^^^^^Compute + Apply Gradients^^^^^^^^^^^^^^^^^^^^^^^^
-        if adaptation_dict["D6"]:
+        if self.M6.loss is not None and adapt_dict["D6"]:
             #############################SCALE 6#################################
-            left_F6_grads = tape.gradient(self.losses_dict["D6"], self.left_conv12.trainable_weights)
-            left_F06_grads = tape.gradient(self.losses_dict["D6"], self.left_conv11.trainable_weights)
-            right_F6_grads = tape.gradient(self.losses_dict["D6"], self.right_conv12.trainable_weights)
-            right_F06_grads = tape.gradient(self.losses_dict["D6"], self.right_conv11.trainable_weights)
+            left_F6_grads = tape.gradient(self.M6.loss, self.left_conv12.trainable_weights)
+            left_F06_grads = tape.gradient(self.M6.loss, self.left_conv11.trainable_weights)
+            right_F6_grads = tape.gradient(self.M6.loss, self.right_conv12.trainable_weights)
+            right_F06_grads = tape.gradient(self.M6.loss, self.right_conv11.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M6_grads = tape.gradient(self.losses_dict["D5"], self.M6.trainable_weights) 
+            M6_grads = tape.gradient(self.M5.loss, self.M6.trainable_weights) 
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
@@ -663,14 +676,14 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
             self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))             
         
-        if adaptation_dict["D5"]:
+        if self.M5.loss is not None and adapt_dict["D5"]:
             ############################SCALE 5###################################
-            left_F5_grads = tape.gradient(self.losses_dict["D5"], self.left_conv10.trainable_weights)
-            left_F05_grads = tape.gradient(self.losses_dict["D5"], self.left_conv9.trainable_weights)
-            right_F5_grads = tape.gradient(self.losses_dict["D5"], self.right_conv10.trainable_weights)
-            right_F05_grads = tape.gradient(self.losses_dict["D5"], self.right_conv9.trainable_weights)
+            left_F5_grads = tape.gradient(self.M5.loss, self.left_conv10.trainable_weights)
+            left_F05_grads = tape.gradient(self.M5.loss, self.left_conv9.trainable_weights)
+            right_F5_grads = tape.gradient(self.M5.loss, self.right_conv10.trainable_weights)
+            right_F05_grads = tape.gradient(self.M5.loss, self.right_conv9.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M5_grads = tape.gradient(self.losses_dict["D4"], self.M5.trainable_weights)   
+            M5_grads = tape.gradient(self.M4.loss, self.M5.trainable_weights)   
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
@@ -678,14 +691,14 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(right_F05_grads, self.right_conv9.trainable_weights))
             self.optimizer.apply_gradients(zip(M5_grads, self.M5.trainable_weights))  
 
-        if adaptation_dict["D4"]:
+        if self.M4.loss is not None and adapt_dict["D4"]:
             ############################SCALE 4###################################
-            left_F4_grads = tape.gradient(self.losses_dict["D4"], self.left_conv8.trainable_weights)
-            left_F04_grads = tape.gradient(self.losses_dict["D4"], self.left_conv7.trainable_weights)
-            right_F4_grads = tape.gradient(self.losses_dict["D4"], self.right_conv8.trainable_weights)
-            right_F04_grads = tape.gradient(self.losses_dict["D4"], self.right_conv7.trainable_weights)
+            left_F4_grads = tape.gradient(self.M4.loss, self.left_conv8.trainable_weights)
+            left_F04_grads = tape.gradient(self.M4.loss, self.left_conv7.trainable_weights)
+            right_F4_grads = tape.gradient(self.M4.loss, self.right_conv8.trainable_weights)
+            right_F04_grads = tape.gradient(self.M4.loss, self.right_conv7.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M4_grads = tape.gradient(self.losses_dict["D3"], self.M4.trainable_weights)     
+            M4_grads = tape.gradient(self.M3.loss, self.M4.trainable_weights)     
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
@@ -693,14 +706,14 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(right_F04_grads, self.right_conv7.trainable_weights))
             self.optimizer.apply_gradients(zip(M4_grads, self.M4.trainable_weights))         
         
-        if adaptation_dict["D3"]:
+        if self.M3.loss is not None and adapt_dict["D3"]:
             ############################SCALE 3###################################
-            left_F3_grads = tape.gradient(self.losses_dict["D3"], self.left_conv6.trainable_weights)
-            left_F03_grads = tape.gradient(self.losses_dict["D3"], self.left_conv5.trainable_weights)
-            right_F3_grads = tape.gradient(self.losses_dict["D3"], self.right_conv6.trainable_weights)
-            right_F03_grads = tape.gradient(self.losses_dict["D3"], self.right_conv5.trainable_weights)
+            left_F3_grads = tape.gradient(self.M3.loss, self.left_conv6.trainable_weights)
+            left_F03_grads = tape.gradient(self.M3.loss, self.left_conv5.trainable_weights)
+            right_F3_grads = tape.gradient(self.M3.loss, self.right_conv6.trainable_weights)
+            right_F03_grads = tape.gradient(self.M3.loss, self.right_conv5.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M3_grads = tape.gradient(self.losses_dict["D2"], self.M3.trainable_weights)            
+            M3_grads = tape.gradient(self.M2.loss, self.M3.trainable_weights)            
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
@@ -708,14 +721,14 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(right_F03_grads, self.right_conv5.trainable_weights))
             self.optimizer.apply_gradients(zip(M3_grads, self.M3.trainable_weights))      
 
-        if adaptation_dict["D2"]: 
+        if self.M2.loss is not None and adapt_dict["D2"]:
             ############################SCALE 2###################################           
-            left_F2_grads = tape.gradient(self.losses_dict["D2"], self.left_conv4.trainable_weights)
-            left_F02_grads = tape.gradient(self.losses_dict["D2"], self.left_conv3.trainable_weights)
-            right_F2_grads = tape.gradient(self.losses_dict["D2"], self.right_conv4.trainable_weights)
-            right_F02_grads = tape.gradient(self.losses_dict["D2"], self.right_conv3.trainable_weights)
+            left_F2_grads = tape.gradient(self.M2.loss, self.left_conv4.trainable_weights)
+            left_F02_grads = tape.gradient(self.M2.loss, self.left_conv3.trainable_weights)
+            right_F2_grads = tape.gradient(self.M2.loss, self.right_conv4.trainable_weights)
+            right_F02_grads = tape.gradient(self.M2.loss, self.right_conv3.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M2_grads = tape.gradient(self.losses_dict["final_loss"], self.M2.trainable_weights) 
+            M2_grads = tape.gradient(self.refinement_module.loss, self.M2.trainable_weights) 
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
@@ -724,19 +737,20 @@ class MADNet(tf.keras.Model):
             self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))    
             ############################SCALE 1###################################
             # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
-            left_F1_grads = tape.gradient(self.losses_dict["D2"], self.left_conv2.trainable_weights)
-            left_F01_grads = tape.gradient(self.losses_dict["D2"], self.left_conv1.trainable_weights)
-            right_F1_grads = tape.gradient(self.losses_dict["D2"], self.right_conv2.trainable_weights)
-            right_F01_grads = tape.gradient(self.losses_dict["D2"], self.right_conv1.trainable_weights)
+            left_F1_grads = tape.gradient(self.M2.loss, self.left_conv2.trainable_weights)
+            left_F01_grads = tape.gradient(self.M2.loss, self.left_conv1.trainable_weights)
+            right_F1_grads = tape.gradient(self.M2.loss, self.right_conv2.trainable_weights)
+            right_F01_grads = tape.gradient(self.M2.loss, self.right_conv1.trainable_weights)
             # Applying gradients
             self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
             self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
             self.optimizer.apply_gradients(zip(right_F1_grads, self.right_conv2.trainable_weights))
             self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
         
-        if adaptation_dict["final_loss"]:
+        if self.refinement_module.loss is not None and adapt_dict["final_loss"]:
             ############################REFINEMENT################################
-            refinement_grads = tape.gradient(self.losses_dict["final_loss"], self.refinement_module.trainable_weights)
+
+            refinement_grads = tape.gradient(self.refinement_module.loss, self.refinement_module.trainable_weights)
             # Applying gradients
             self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
@@ -747,8 +761,10 @@ class MADNet(tf.keras.Model):
 
 model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
 
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+
 model.compile(
-    optimizer='adam', 
+    optimizer=optimizer, 
     run_eagerly = True   
 )
 
@@ -1018,7 +1034,7 @@ stereo_dataset = StereoDatasetCreator(
     height=image_height, 
     width=image_width,
     shuffle=False,
-    #disp_dir=left_disp_dir
+    disp_dir=left_disp_dir
     ) 
 
 train_ds = stereo_dataset()
@@ -1045,19 +1061,21 @@ train_ds = stereo_dataset()
 
 
 
-# history = model.fit(
-#     x=train_ds,
-#     epochs=2,
-#     verbose=2,
-#     steps_per_epoch=5
-# )
+history = model.fit(
+    x=train_ds,
+    epochs=10,
+    verbose=1,
+    steps_per_epoch=10
+)
 
-model.MAD_predict = True
-
-disparity = model.predict(train_ds, steps=5)
-
-print(f"disparity shape: {disparity.shape}")
+# model.MAD_predict = True
+# model.num_adapt_modules = 1
 
 
-cv2.imshow("predicted disp", disparity[0])
-cv2.waitKey(0)
+# disparity = model.predict(train_ds, steps=3)
+
+# print(f"disparity shape: {disparity.shape}")
+
+
+# cv2.imshow("predicted disp", disparity[0])
+# cv2.waitKey(0)
