@@ -1,6 +1,6 @@
 import os
 import tensorflow as tf
-import numpy as np
+import argparse
 from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
 
@@ -8,77 +8,113 @@ from preprocessing import StereoDatasetCreator
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
 
-image_height = 320
-image_width = 1216
-input_size = (image_height, image_width)
-batch_size = 1 
-search_range = 2 # maximum dispacement (ie. smallest disparity)
 
-train_left_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/left"
-train_right_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/right"
-train_left_disp_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/disparity/left"
-model_output_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models"
-
-# Initialise the model
-model = MADNet(height=image_height, width=image_width, search_range=search_range, batch_size=batch_size)
-
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
-model.compile(
-    optimizer=optimizer, 
-    run_eagerly = True   
-)
-
-# Get training data
-train_dataset = StereoDatasetCreator(
-    left_dir=train_left_dir, 
-    right_dir=train_right_dir, 
-    batch_size=batch_size, 
-    height=image_height, 
-    width=image_width,
-    shuffle=False,
-    disp_dir=train_left_disp_dir
-    ) 
-
-train_ds = train_dataset()
+parser=argparse.ArgumentParser(description='Script for training MADNet')
+parser.add_argument("--train_left_dir", help='path to left images folder', required=True)
+parser.add_argument("--train_right_dir", help='path to right images folder', required=True)
+parser.add_argument("--train_disp_dir", help='path to left disparity maps folder', default=None, required=False)
+parser.add_argument("--shuffle", help='shuffle training dataset', default=False, required=False)
+parser.add_argument("--search_range", help='maximum dispacement (ie. smallest disparity)', default=2, type=int, required=False)
+parser.add_argument("-o", "--output_dir", help='path to folder for outputting tensorboard logs and saving model weights', required=True)
+parser.add_argument("--weights_path", help="path to pretrained MADNet saved model (for fine turning)", default=None, required=False)
+parser.add_argument("--lr", help="initial value for learning rate",default=0.0001, type=float, required=False)
+parser.add_argument("--height", help='model image input height resolution', type=int, default=320)
+parser.add_argument("--width", help='model image input height resolution', type=int, default=1216)
+parser.add_argument("--batch_size", help='batch size to use during training',type=int,default=1)
+parser.add_argument("--num_epochs", help='number of training epochs', type=int, default=50)
+parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, default=100)
+parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=1000)
+args=parser.parse_args()
 
 
-# Create callbacks
-def scheduler(epoch, lr):
-    if epoch < 400000:
-        return lr
-    elif epoch < 600000:
-        return lr * 0.5
-    else:
-        # learning_rate * decay_rate ^ (global_step / decay_steps)
-        decay_rate = 0.5       
-        return lr * 0.5 * decay_rate ** (epoch // 600000)
+def main(args):
+    train_left_dir = args.train_left_dir
+    train_right_dir = args.train_right_dir
+    train_disp_dir = args.train_disp_dir
+    shuffle = args.shuffle
+    search_range = args.search_range
+    output_dir = args.output_dir
+    weights_path = args.weights_path
+    lr = args.lr
+    height = args.height
+    width = args.width
+    batch_size = args.batch_size
+    num_epochs = args.num_epochs
+    epoch_steps = args.epoch_steps
+    save_freq = args.save_freq
+
+    run_eager = True
+    if train_disp_dir is None:
+        # dont need to train eagerly when not using gt disparities 
+        run_eager = False
+
+    # Create output folder if it doesnt already exist
+    os.makedirs(output_dir, exist_ok=True)
 
 
-schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+    # Initialise the model
+    model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
 
-save_callback = tf.keras.callbacks.ModelCheckpoint(
-    filepath=model_output_dir + "/weights/epoch-{epoch:02d}-MADNet",
-    save_freq=10,
-    save_weights_only=False,
-    verbose=0
-)
-
-tensorboard_callback = tf.keras.callbacks.TensorBoard(
-    log_dir=model_output_dir + "/tensorboard",
-    histogram_freq=1,
-    write_steps_per_second=True,
-    update_freq="batch"
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+    model.compile(
+        optimizer=optimizer, 
+        run_eagerly = run_eager  
     )
 
-# Fit the model
-history = model.fit(
-    x=train_ds,
-    epochs=2,
-    verbose=1,
-    steps_per_epoch=10,
-    callbacks=[
-        tensorboard_callback,
-        save_callback,
-        schedule_callback
-    ]
-)
+    # Get training data
+    train_dataset = StereoDatasetCreator(
+        left_dir=train_left_dir, 
+        right_dir=train_right_dir, 
+        batch_size=batch_size, 
+        height=height, 
+        width=width,
+        shuffle=shuffle,
+        disp_dir=train_disp_dir
+        ) 
+
+    train_ds = train_dataset()
+
+
+    # Create callbacks
+    def scheduler(epoch, lr):
+        if epoch < 400000:
+            return lr
+        elif epoch < 600000:
+            return lr * 0.5
+        else:
+            # learning_rate * decay_rate ^ (global_step / decay_steps)
+            decay_rate = 0.5       
+            return lr * 0.5 * decay_rate ** (epoch // 600000)
+
+    schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+    save_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=output_dir + "/weights/epoch-{epoch:02d}-MADNet",
+        save_freq=save_freq,
+        save_weights_only=False,
+        verbose=0
+    )
+
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=output_dir + "/tensorboard",
+        histogram_freq=1,
+        write_steps_per_second=True,
+        update_freq="batch"
+        )
+
+    # Fit the model
+    history = model.fit(
+        x=train_ds,
+        epochs=num_epochs,
+        verbose=1,
+        steps_per_epoch=epoch_steps,
+        callbacks=[
+            tensorboard_callback,
+            save_callback,
+            schedule_callback
+        ]
+    )
+
+
+if __name__ == "__main__":
+    main(args)
