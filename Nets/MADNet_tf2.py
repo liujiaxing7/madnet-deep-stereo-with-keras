@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import numpy as np
 from keras.engine import data_adapter
+from matplotlib import cm
 import cv2
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
@@ -14,10 +15,39 @@ input_size = (image_height, image_width)
 batch_size = 1 # Set batch size to none to have a variable batch size
 search_range = 2 # maximum dispacement (ie. smallest disparity)
 
-left_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/left"
-right_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/right"
-left_disp_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/disparity/left"
+train_left_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/left"
+train_right_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/image_clean/right"
+train_left_disp_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/train/disparity/left"
+model_output_dir = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models"
 
+
+def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
+    """
+    A utility function for TensorFlow that maps a grayscale image to a matplotlib colormap for use with TensorBoard image summaries.
+    By default it will normalize the input value to the range 0..1 before mapping to a grayscale colormap.
+    Arguments:
+      - value: 4D Tensor of shape [batch_size,height, width,1]
+      - vmin: the minimum value of the range used for normalization. (Default: value minimum)
+      - vmax: the maximum value of the range used for normalization. (Default: value maximum)
+      - cmap: a valid cmap named for use with matplotlib's 'get_cmap'.(Default: 'gray')
+    
+    Returns a 3D tensor of shape [batch_size,height, width,3].
+    """
+
+    # normalize
+    vmin = tf.reduce_min(value) if vmin is None else vmin
+    vmax = tf.reduce_max(value) if vmax is None else vmax
+    value = (value - vmin) / (vmax - vmin) # vmin..vmax
+
+    # quantize
+    indices = tf.cast(tf.round(value[:,:,:,0]*255), dtype=tf.int32)
+
+    # gather
+    color_map = cm.get_cmap(cmap)
+    colors = color_map(np.arange(256))[:,:3]
+    colors = tf.constant(colors, dtype=tf.float32)
+    value = tf.gather(colors, indices)
+    return value
 
 
 class SSIMLoss(tf.keras.losses.Loss):
@@ -406,7 +436,15 @@ class MADNet(tf.keras.Model):
 
         with tf.GradientTape(persistent=True) as tape:
             # Forward pass
-            _ = self(inputs={'left_input': left_input, 'right_input': right_input}, target=gt, training=True)
+            final_disparity = self(inputs={'left_input': left_input, 'right_input': right_input}, target=gt, training=True)
+
+
+        # Tensorboard images
+        tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'), step=model._train_counter, max_outputs=1)
+        if gt is not None:
+            tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'), step=model._train_counter, max_outputs=1)
+        tf.summary.image('03_left_image', left_input, step=model._train_counter, max_outputs=1)
+        tf.summary.image('04_right_image', right_input, step=model._train_counter, max_outputs=1)
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
@@ -836,8 +874,8 @@ model.compile(
 # # steps_per_epoch = math.ceil(left_generator.samples / batch_size)        
 
 # stereo_gen = StereoGenerator(
-#     left_dir=left_dir, 
-#     right_dir=right_dir, 
+#     left_dir=train_left_dir, 
+#     right_dir=train_right_dir, 
 #     batch_size=batch_size, 
 #     height=image_height, 
 #     width=image_width,
@@ -849,7 +887,7 @@ model.compile(
 
 
 
-# path = left_dir + "/0000001.png"
+# path = train_left_dir + "/0000001.png"
 # raw = tf.io.read_file(path)
 # image = tf.io.decode_image(raw, channels=3, dtype=tf.float32, expand_animations=False)
 # # Converts to float32 and normalises values
@@ -1027,17 +1065,17 @@ class StereoDatasetCreator():
 
 
 
-stereo_dataset = StereoDatasetCreator(
-    left_dir=left_dir, 
-    right_dir=right_dir, 
+train_dataset = StereoDatasetCreator(
+    left_dir=train_left_dir, 
+    right_dir=train_right_dir, 
     batch_size=batch_size, 
     height=image_height, 
     width=image_width,
     shuffle=False,
-    disp_dir=left_disp_dir
+    disp_dir=train_left_disp_dir
     ) 
 
-train_ds = stereo_dataset()
+train_ds = train_dataset()
 
 
 # for index, element in enumerate(train_ds):
@@ -1057,15 +1095,44 @@ train_ds = stereo_dataset()
 #     if index > 2:
 #         break
 
+def scheduler(epoch, lr):
+    if epoch < 400000:
+        return lr
+    elif epoch < 600000:
+        return lr * 0.5
+    else:
+        # learning_rate * decay_rate ^ (global_step / decay_steps)
+        decay_rate = 0.5       
+        return lr * 0.5 * decay_rate ** (epoch // 600000)
 
 
+schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+save_callback = tf.keras.callbacks.ModelCheckpoint(
+    filepath=model_output_dir + "/weights/epoch-{epoch:02d}-MADNet",
+    save_freq=10,
+    save_weights_only=False,
+    verbose=0
+)
+
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+    log_dir=model_output_dir + "/tensorboard",
+    histogram_freq=1,
+    write_steps_per_second=True,
+    update_freq="batch"
+    )
 
 
 history = model.fit(
     x=train_ds,
-    epochs=10,
+    epochs=2,
     verbose=1,
-    steps_per_epoch=10
+    steps_per_epoch=10,
+    callbacks=[
+        tensorboard_callback,
+        save_callback,
+        schedule_callback
+    ]
 )
 
 # model.MAD_predict = True
