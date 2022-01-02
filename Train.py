@@ -3,6 +3,7 @@ import tensorflow as tf
 import argparse
 from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
+from losses import Bad3, EndPointError
 
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
@@ -56,6 +57,7 @@ def main(args):
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
     model.compile(
         optimizer=optimizer, 
+        metrics=[EndPointError(), Bad3()],
         run_eagerly = run_eager  
     )
 

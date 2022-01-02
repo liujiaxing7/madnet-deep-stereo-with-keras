@@ -17,11 +17,11 @@ def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
     
     Returns a 3D tensor of shape [batch_size,height, width,3].
     """
-
-    # normalize
-    vmin = tf.reduce_min(value) if vmin is None else vmin
-    vmax = tf.reduce_max(value) if vmax is None else vmax
-    value = (value - vmin) / (vmax - vmin) # vmin..vmax
+    # Uncomment the code below if disparity isnt normalised already
+    # # normalize
+    # vmin = tf.reduce_min(value) if vmin is None else vmin
+    # vmax = tf.reduce_max(value) if vmax is None else vmax
+    # value = (value - vmin) / (vmax - vmin) # vmin..vmax
 
     # quantize
     indices = tf.cast(tf.round(value[:,:,:,0]*255), dtype=tf.int32)
@@ -349,6 +349,7 @@ class ModuleM(tf.keras.Model):
             "layer": self.layer, 
             "search_range": self.search_range, 
             "batch_size": self.batch_size,
+            "loss": self.loss,
             "loss_fn": self.loss_fn,
             "cost_volume": self.cost_volume,
             "stereo_estimator": self.stereo_estimator
@@ -610,7 +611,6 @@ class MADNet(tf.keras.Model):
         self.left_pyramid = self.left_conv11(left_F5)
         left_F6 = self.left_conv12(self.left_pyramid)
 
-
         # Right image feature pyramid (feature extractor)
         # F1
         self.right_pyramid = self.right_conv1(right_input)
@@ -631,18 +631,23 @@ class MADNet(tf.keras.Model):
         self.right_pyramid = self.right_conv11(right_F5)
         right_F6 = self.right_conv12(self.right_pyramid)
 
+        # Select loss calculation method
+        use_MAD = False
+        if training == True and target is None:
+            use_MAD = True
+
         #############################SCALE 6#################################
-        D6 = self.M6(left_F6, right_F6, None, training)     
+        D6 = self.M6(left_F6, right_F6, None, use_MAD)     
         ############################SCALE 5###################################
-        D5 = self.M5(left_F5, right_F5, D6, training)    
+        D5 = self.M5(left_F5, right_F5, D6, use_MAD)    
         ############################SCALE 4###################################
-        D4 = self.M4(left_F4, right_F4, D5, training) 
+        D4 = self.M4(left_F4, right_F4, D5, use_MAD) 
         ############################SCALE 3###################################
-        D3 = self.M3(left_F3, right_F3, D4, training)
+        D3 = self.M3(left_F3, right_F3, D4, use_MAD)
         ############################SCALE 2###################################
-        D2 = self.M2(left_F2, right_F2, D3, training) 
+        D2 = self.M2(left_F2, right_F2, D3, use_MAD) 
         ############################REFINEMENT################################
-        final_disparity = self.refinement_module(left_F2, D2, left_input, right_input, training) 
+        final_disparity = self.refinement_module(left_F2, D2, left_input, right_input, use_MAD) 
 
         # Override warping losses using loss from the groundtruth (if its available)
         # For supervised training only
