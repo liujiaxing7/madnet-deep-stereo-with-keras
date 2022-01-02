@@ -42,8 +42,8 @@ class StereoCostVolume(tf.keras.layers.Layer):
         warp: Warped level of the feature pyramid of the right image
         search_range: Search range (maximum displacement)
     """
-    def __init__(self, name="cost_volume"):
-        super(StereoCostVolume, self).__init__(name=name)
+    def __init__(self, name="cost_volume", **kwargs):
+        super(StereoCostVolume, self).__init__(name=name, **kwargs)
 
     def call(self, c1, warp, search_range):
         padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
@@ -63,10 +63,24 @@ class StereoCostVolume(tf.keras.layers.Layer):
 
         return cost_curve
 
-class BuildIndices(tf.keras.layers.Layer):
+    def get_config(self):
+        config = super(StereoCostVolume, self).get_config()
+        return config
 
-    def __init__(self, name="build_indices", batch_size=1):
-        super(BuildIndices, self).__init__(name=name)
+
+class BuildIndices(tf.keras.layers.Layer):
+    """
+	Given a flow or disparity generate the coordinates 
+    of source pixels to sample from [batch, height_t, width_t, 2]
+    Args:
+	    coords: Generic optical flow or disparity 
+    Returns:
+        coordinates to sample from.   
+    
+    """
+
+    def __init__(self, name="build_indices", batch_size=1, **kwargs):
+        super(BuildIndices, self).__init__(name=name, **kwargs)
         self.batch_size = batch_size
 
     def call(self, coords):
@@ -93,11 +107,28 @@ class BuildIndices(tf.keras.layers.Layer):
 
         return output
 
+    def get_config(self):
+        config = super(BuildIndices, self).get_config()
+        config.update({"batch_size": self.batch_size})
+        return config
+
 
 class Warp(tf.keras.layers.Layer):
-
-    def __init__(self, name="warp"):
-        super(Warp, self).__init__(name=name)
+    """
+    Construct a new image by bilinear sampling from the input image.
+    The right image is warpt into the lefts position.
+    Points falling outside the source image boundary have value 0.
+    Args:
+        imgs: source right images to be sampled from [batch, height_s, width_s, channels]
+        coords: coordinates of source pixels to sample from [batch, height_t, width_t, 2]. 
+            height_t/width_t correspond to the dimensions of the outputimage (don't need to be the same as height_s/width_s). 
+            The two channels correspond to x and y coordinates respectively.
+    Returns:
+        A new sampled image [batch, height_t, width_t, channels],
+        which ideally is very similar to the left image
+    """
+    def __init__(self, name="warp", **kwargs):
+        super(Warp, self).__init__(name=name, **kwargs)
 
     def call(self, imgs, coords):
             
@@ -134,11 +165,26 @@ class Warp(tf.keras.layers.Layer):
 
         return output
 
+    def get_config(self):
+        config = super(Warp, self).get_config()
+        return config
+
 
 class StereoContextNetwork(tf.keras.Model):
+    """
+    Final Layer in MADNet.
+    Calculates the reprojection loss if training=True.
+    Args:
+        input: left_F2 tensor
+        disp: D2 disparity from M2 module
+        final_left: full resolution RGB left image
+        final_right: full resolution RGB right image
+    Returns:
+        Full resolution disparity in float32 normalized 0-1
+    """
 
-    def __init__(self, name="residual_refinement_network", batch_size=1):
-        super(StereoContextNetwork, self).__init__(name=name)
+    def __init__(self, name="residual_refinement_network", batch_size=1, **kwargs):
+        super(StereoContextNetwork, self).__init__(name=name, **kwargs)
         self.batch_size = batch_size
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         self.loss = None
@@ -154,7 +200,6 @@ class StereoContextNetwork(tf.keras.Model):
         self.context7 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation="linear", use_bias=True, name="context7")
         self.add = tf.keras.layers.Add(name="context_disp")
         self.concat = tf.keras.layers.Concatenate(axis=-1)
-
         self.warp = Warp(name="warp_final")
         self.build_indices = BuildIndices(name="build_indices_final", batch_size=self.batch_size)
 
@@ -172,16 +217,39 @@ class StereoContextNetwork(tf.keras.Model):
         context_disp = self.add([disp, self.x])
         final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=final_left.shape[1], width=final_left.shape[2], interpolation='bilinear')(context_disp)
 
-        # warp right image with final disparity to get final reprojection loss
-        final_coords = self.concat([final_disparity, tf.zeros_like(final_disparity)])
-        final_indices = self.build_indices(final_coords)
-        # Warp the right image into the left using final disparity
-        final_warped_left = self.warp(final_right, final_indices)    
-
         if training == True:
+            # warp right image with final disparity to get final reprojection loss
+            final_coords = self.concat([final_disparity, tf.zeros_like(final_disparity)])
+            final_indices = self.build_indices(final_coords)
+            # Warp the right image into the left using final disparity
+            final_warped_left = self.warp(final_right, final_indices) 
+            # reprojection loss   
             self.loss = self.loss_fn(final_warped_left, final_left)      
 
         return final_disparity
+
+    def get_config(self):
+        config = super(StereoContextNetwork, self).get_config()
+        config.update({
+            "loss": self.loss, 
+            "act": self.act, 
+            "batch_size": self.batch_size,
+            "loss_fn": self.loss_fn,
+            "x": self.x,
+            "context1": self.context1, 
+            "context2": self.context2,
+            "context3": self.context3,
+            "context4": self.context4,
+            "context5": self.context5,
+            "context6": self.context6,
+            "context7": self.context7,
+            "add": self.add,
+            "concat": self.concat,
+            "warp": self.warp,
+            "build_indices": self.build_indices
+            })
+        return config
+
 
 
 class StereoEstimator(tf.keras.Model):
@@ -194,8 +262,8 @@ class StereoEstimator(tf.keras.Model):
     The output is predicted disparity for the network at resolution n.
     """
 
-    def __init__(self, name="volume_filtering"):
-        super(StereoEstimator, self).__init__(name=name)
+    def __init__(self, name="volume_filtering", **kwargs):
+        super(StereoEstimator, self).__init__(name=name, **kwargs)
         act = tf.keras.layers.Activation(tf.nn.leaky_relu)
         self.disp1 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp1")
         self.disp2 = tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="disp2")
@@ -218,14 +286,28 @@ class StereoEstimator(tf.keras.Model):
         x = self.disp6(x)
         return x
 
+    def get_config(self):
+        config = super(StereoEstimator, self).get_config()
+        config.update({
+            "act": self.act, 
+            "disp1": self.disp1, 
+            "disp2": self.disp2,
+            "disp3": self.disp3,
+            "disp4": self.disp4,
+            "disp5": self.disp5,
+            "disp6": self.disp6,
+            "concat": self.concat,
+            })
+        return config
+
 
 class ModuleM(tf.keras.Model):
     """
     Module MX is a sub-module of MADNet, which can be trained individually for 
     online adaptation using the MAD (Modular ADaptaion) method.
     """
-    def __init__(self, name="MX", layer="X", search_range=2, batch_size=1):
-        super(ModuleM, self).__init__(name=name)
+    def __init__(self, name="MX", layer="X", search_range=2, batch_size=1, **kwargs):
+        super(ModuleM, self).__init__(name=name, **kwargs)
         self.search_range = search_range
         self.batch_size = batch_size
         self.loss = None
@@ -261,20 +343,42 @@ class ModuleM(tf.keras.Model):
 
         return module_disparity
 
+    def get_config(self):
+        config = super(ModuleM, self).get_config()
+        config.update({
+            "layer": self.layer, 
+            "search_range": self.search_range, 
+            "batch_size": self.batch_size,
+            "loss_fn": self.loss_fn,
+            "cost_volume": self.cost_volume,
+            "stereo_estimator": self.stereo_estimator
+            })
+        return config
+
 
 # ------------------------------------------------------------------------
 # Model Creation
 class MADNet(tf.keras.Model):
     """
-    The main MADNet model
+    The main MADNet model.
+    Contains the logic for training, evaluation and and prediction.
+
+    Training contains 2 modes, full MAD (unsupervised training) and 
+    supervised training with groundtruth disparities.
+
+    Prediction can run with no adaptation, full MAD or inbetween,
+    update 1-5 modules. The number of modules to adapt can be selected 
+    by changeing num_adapt_modules attribute. Adaptation can be turned off
+    by setting the attribute MAD_predict = False.  
+
+    The keras methods .fit, .predict and .evaluate all work with this model.
     """
-    def __init__(self, name="MADNet", height=320, width=1216, search_range=2, batch_size=1):
-        super(MADNet, self).__init__(name=name)
+    def __init__(self, name="MADNet", height=320, width=1216, search_range=2, batch_size=1, **kwargs):
+        super(MADNet, self).__init__(name=name, **kwargs)
         self.height = height
         self.width = width
         self.batch_size = batch_size
         self.search_range = search_range
-        self.batch_size = batch_size
         # for converstion between tensor and dict
         self.module_indexes = {"D6": 0, "D5": 1, "D4": 2, "D3": 3, "D2": 4, "final_loss": 5} 
         # Selects whether to perform MAD when running .predict
@@ -477,6 +581,10 @@ class MADNet(tf.keras.Model):
 
     # Forward pass of the model
     def call(self, inputs, target=None, training=False):
+        """
+        This is the forward pass of the model.
+        Call is used in training, evaluation and prediction.
+        """
         # Left and right image inputs
         left_input = inputs["left_input"]
         right_input = inputs["right_input"]
@@ -723,5 +831,49 @@ class MADNet(tf.keras.Model):
 
         return final_disparity
 
+    def get_config(self):
+        config = super(MADNet, self).get_config()
+        config.update({
+            "height": self.height, 
+            "width": self.width,
+            "search_range": self.search_range, 
+            "batch_size": self.batch_size,
+            "module_indexes": self.module_indexes,
+            "MAD_predict": self.MAD_predict,
+            "num_adapt_modules": self.num_adapt_modules,
+            "loss_fn": self.loss_fn,
+            "act": self.act,
+            "left_conv1": self.left_conv1, 
+            "left_conv2": self.left_conv2,
+            "left_conv3": self.left_conv3,
+            "left_conv4": self.left_conv4,
+            "left_conv5": self.left_conv5,
+            "left_conv6": self.left_conv6,
+            "left_conv7": self.left_conv7,
+            "left_conv8": self.left_conv8,
+            "left_conv9": self.left_conv9,
+            "left_conv10": self.left_conv10,
+            "left_conv11": self.left_conv11,
+            "left_conv12": self.left_conv12,
+            "right_conv1": self.right_conv1, 
+            "right_conv2": self.right_conv2,
+            "right_conv3": self.right_conv3,
+            "right_conv4": self.right_conv4,
+            "right_conv5": self.right_conv5,
+            "right_conv6": self.right_conv6,
+            "right_conv7": self.right_conv7,
+            "right_conv8": self.right_conv8,
+            "right_conv9": self.right_conv9,
+            "right_conv10": self.right_conv10,
+            "right_conv11": self.right_conv11,
+            "right_conv12": self.right_conv12,
+            "M6": self.M6,
+            "M5": self.M5,
+            "M4": self.M4,
+            "M3": self.M3,
+            "M2": self.M2,
+            "refinement_module": self.refinement_module
+            })
+        return config
 
 

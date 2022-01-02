@@ -24,7 +24,7 @@ class StereoDatasetCreator():
 
     This can prepare MADNet data for training/evaluation and prediction
     """
-    def __init__(self, left_dir, right_dir, batch_size, height, width, shuffle, disp_dir=None):
+    def __init__(self, left_dir, right_dir, height, width, batch_size=1, shuffle=False, disp_dir=None):
         self.left_dir = left_dir
         self.right_dir = right_dir
         self.disp_dir = disp_dir
@@ -44,7 +44,7 @@ class StereoDatasetCreator():
         if self.num_left != self.num_right:
             raise ValueError(f"Number of right and left images do now match. Left number: {self.num_left}. Right number: {self.num_right}")
 
-    def __get_image(self, path):
+    def _get_image(self, path):
         """
         Get a single image helper function
         Converts image to float32, normalises values to 0-1
@@ -107,7 +107,7 @@ class StereoDatasetCreator():
         data = np.flipud(data)
         return data
 
-    def __get_pfm(self, path):
+    def _get_pfm(self, path):
         """
         Reads a single pfm disparity file and
         returns a numpy disparity map
@@ -134,7 +134,7 @@ class StereoDatasetCreator():
         disp_map = tf.image.resize(disp_map, [self.height, self.width], method="bilinear")
         return disp_map
 
-    def __process_single_batch(self, index):
+    def _process_single_batch(self, index):
         """
         Processes a single batch using index to find the files
         Args: 
@@ -144,14 +144,14 @@ class StereoDatasetCreator():
         """
         left_name = self.left_names[index]
         right_name = self.right_names[index]
-        left_image = self.__get_image(f"{self.left_dir}/" +  left_name)
-        right_image = self.__get_image(f"{self.right_dir}/" + right_name)
+        left_image = self._get_image(f"{self.left_dir}/" +  left_name)
+        right_image = self._get_image(f"{self.right_dir}/" + right_name)
 
         disp_map = None  
         if self.disp_dir is not None:
             disp_name = self.disp_names[index]  
             # wrapping in py_function so that the function can execute eagerly and run non tensor ops
-            disp_map = tf.py_function(func=self.__get_pfm, inp=[f"{self.disp_dir}/" + disp_name], Tout=tf.float32)
+            disp_map = tf.py_function(func=self._get_pfm, inp=[f"{self.disp_dir}/" + disp_name], Tout=tf.float32)
 
         return {'left_input': left_image, 'right_input': right_image}, disp_map
 
@@ -165,7 +165,7 @@ class StereoDatasetCreator():
         if self.shuffle == True:
             indexes_ds.shuffle(buffer_size=self.num_left, seed=101, reshuffle_each_iteration=False)
 
-        ds = indexes_ds.map(self.__process_single_batch)
+        ds = indexes_ds.map(self._process_single_batch)
         ds = ds.batch(batch_size=self.batch_size, drop_remainder=True)
         ds = ds.prefetch(buffer_size=10)
         return ds
@@ -207,7 +207,7 @@ class StereoGenerator(tf.keras.utils.Sequence):
         return self.num_left // self.batch_size
 
 
-    def __get_image(self, image_dir, image_name):
+    def _get_image(self, image_dir, image_name):
         # get a single image helper function
         image = tf.keras.preprocessing.image.load_img(f"{image_dir}/{image_name}")
         image_arr = tf.keras.preprocessing.image.img_to_array(image)
@@ -219,8 +219,8 @@ class StereoGenerator(tf.keras.utils.Sequence):
         left_batch = self.left_paths[index: self.batch_size + index]
         right_batch = self.right_paths[index: self.batch_size + index]
 
-        left_images = tf.constant([self.__get_image(self.left_dir, image_name) for image_name in left_batch])
-        right_images = tf.constant([self.__get_image(self.right_dir, image_name) for image_name in right_batch])
+        left_images = tf.constant([self._get_image(self.left_dir, image_name) for image_name in left_batch])
+        right_images = tf.constant([self._get_image(self.right_dir, image_name) for image_name in right_batch])
         return {'left_input': left_images, 'right_input': right_images}, None
 
 
