@@ -3,7 +3,7 @@ import tensorflow as tf
 import argparse
 from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
-from losses_and_metrics import Bad3, EndPointError
+from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
 
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
@@ -28,6 +28,8 @@ parser.add_argument("--batch_size", help='batch size to use during training',typ
 parser.add_argument("--num_epochs", help='number of training epochs', type=int, default=1000)
 parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, default=1000)
 parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=10)
+parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
+parser.add_argument("--eval_steps", help='number of batches to process per evaluation', type=int, default=1)
 args=parser.parse_args()
 
 
@@ -49,6 +51,8 @@ def main(args):
     num_epochs = args.num_epochs
     epoch_steps = args.epoch_steps
     save_freq = args.save_freq
+    epoch_evals = args.epoch_evals
+    eval_steps = args.eval_steps
 
     run_eager = True
     if train_disp_dir is None and val_disp_dir is None:
@@ -63,6 +67,8 @@ def main(args):
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
     model.compile(
         optimizer=optimizer, 
+        # losses and metrics below are only needed for evaluation
+        loss=[ReconstructionLoss()],
         metrics=[EndPointError(), Bad3()],
         run_eagerly = run_eager  
     )
@@ -139,8 +145,8 @@ def main(args):
             schedule_callback
         ],
         validation_data=val_ds,
-        validation_steps=1,
-        validation_freq=save_freq # evaluates every save epoch
+        validation_steps=eval_steps,
+        validation_freq=epoch_evals # number epoch evaluations 
     )
 
     model.save(f"{output_dir}/MADNet-{num_epochs}-epochs-{epoch_steps}-epoch_steps")

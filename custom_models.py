@@ -578,7 +578,7 @@ class MADNet(tf.keras.Model):
             "D4_loss": self.M4.loss, 
             "D3_loss": self.M3.loss, 
             "D2_loss": self.M2.loss, 
-            "final_loss": self.refinement_module.loss
+            "loss": self.refinement_module.loss
             }
 
         if gt is not None:

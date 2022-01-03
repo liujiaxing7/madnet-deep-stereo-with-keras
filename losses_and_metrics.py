@@ -41,10 +41,10 @@ class Bad3(tf.keras.metrics.Metric):
     between predicted disparity and groundtruth.
     
     """
-    def __init__(self, name="Bad3", **kwargs):
+    def __init__(self, name="Bad3(%)", **kwargs):
         super(Bad3, self).__init__(name=name, **kwargs)
         self.pixel_threshold = 3
-        self.bad3 = self.add_weight(name='bad3 (%)', initializer='zeros')
+        self.bad3 = self.add_weight(name='bad3_percent', initializer='zeros')
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         # Remove normalisation
@@ -70,7 +70,8 @@ class Bad3(tf.keras.metrics.Metric):
 
 def calculate_metrics(y_true, y_pred, pixel_threshold):
     """
-    Calculates all metrics and returns them in a dictionary
+    Calculates all metrics and returns them in a dictionary.
+    Used inside train_step.
     """
     # Remove normalisation
     y_true *= 256
@@ -86,20 +87,7 @@ def calculate_metrics(y_true, y_pred, pixel_threshold):
     bad_pixel_abs = tf.where(tf.greater(filtered_error, pixel_threshold), tf.ones_like(filtered_error, dtype=tf.float32), tf.zeros_like(filtered_error, dtype=tf.float32))
     # (number of errors greater than threshold) / (number of errors)   
     bad3 = tf.reduce_sum(bad_pixel_abs) / tf.reduce_sum(valid_map) * 100
-    return {"EPE": end_point_error, "bad3 (%)": bad3}
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return {"EPE": end_point_error, "Bad3(%)": bad3}
 
 
 #---------------Losses-------------------
@@ -108,22 +96,22 @@ class SSIMLoss(tf.keras.losses.Loss):
     SSIM dissimilarity measure
     Used for self-supervised training
     Args:
-        x: target image
-        y: predicted image
+        y_true: target image
+        y_pred: predicted image
     """
     def __init__(self, name="mean_SSIM_l1"):
         super(SSIMLoss, self).__init__(name=name)
         self.pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
 
-    def call(self, x, y):
+    def call(self, y_true, y_pred):
         C1 = 0.01**2
         C2 = 0.03**2
-        mu_x = self.pool(x)
-        mu_y = self.pool(y)
+        mu_x = self.pool(y_true)
+        mu_y = self.pool(y_pred)
 
-        sigma_x = self.pool(x**2) - mu_x**2
-        sigma_y = self.pool(y**2) - mu_y**2
-        sigma_xy = self.pool(x*y) - mu_x * mu_y
+        sigma_x = self.pool(y_true**2) - mu_x**2
+        sigma_y = self.pool(y_pred**2) - mu_y**2
+        sigma_xy = self.pool(y_true*y_pred) - mu_x * mu_y
 
         SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
         SSIM_d = (mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2)
@@ -133,7 +121,7 @@ class SSIMLoss(tf.keras.losses.Loss):
 
         mean_SSIM = tf.reduce_mean(SSIM)
 
-        sum_l1 = tf.reduce_sum(tf.abs(x - y))
+        sum_l1 = tf.reduce_sum(tf.abs(y_true - y_pred))
 
         return 0.85 * mean_SSIM + 0.15 * sum_l1
 
@@ -145,11 +133,11 @@ class ReconstructionLoss(tf.keras.losses.Loss):
     disparity and predicted disparity
     Used for supervised training
     Args:
-        x: target image
-        y: predicted image
+        y_true: target image
+        y_pred: predicted image
     """
     def __init__(self, name="mean_l1"):
         super(ReconstructionLoss, self).__init__(name=name)
 
-    def call(self, x, y):
-        return tf.reduce_sum(tf.abs(x-y))
+    def call(self, y_true, y_pred):
+        return tf.reduce_sum(tf.abs(y_true-y_pred))
