@@ -16,8 +16,7 @@ parser.add_argument("--mad_pred", help='use modular adaptation while inferencing
 parser.add_argument("--num_adapt", help='number of modules to adapt', default=1, type=int, required=False)
 parser.add_argument("--search_range", help='maximum dispacement (ie. smallest disparity)', default=2, type=int, required=False)
 parser.add_argument("-o", "--output_dir", help='path to folder for saving updated model (only needed if performing MAD)', default=None, required=False)
-parser.add_argument("--weights_path", help="path to pretrained MADNet saved model", required=True)
-parser.add_argument("--is_checkpoint", help="True is weights are a checkpoint, False if weights are saved_model", action="store_true", default=False)
+parser.add_argument("--checkpoint_path", help="path to pretrained MADNet checkpoint file", required=True)
 parser.add_argument("--lr", help="learning rate (only used if weights are a checkpoint)", default=0.0001, type=float, required=False)
 parser.add_argument("--height", help='model image input height resolution', type=int, default=320)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=1216)
@@ -36,8 +35,7 @@ def main(args):
     num_adapt = args.num_adapt
     search_range = args.search_range
     output_dir = args.output_dir
-    weights_path = args.weights_path
-    is_checkpoint = args.is_checkpoint
+    checkpoint_path = args.checkpoint_path
     lr = args.lr
     height = args.height
     width = args.width
@@ -53,34 +51,15 @@ def main(args):
 
 
     # Initialise the model
-    if is_checkpoint:
-        model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
+    model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
 
-        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-        model.compile(
-            optimizer=optimizer, 
-            run_eagerly = run_eager   
-        )
-        model.load_weights(weights_path)
-    else:
-        model = tf.keras.models.load_model(
-            weights_path, 
-            custom_objects={
-                "MADNet": MADNet,
-                "ModuleM": ModuleM,
-                "StereoEstimator": StereoEstimator,
-                "StereoContextNetwork": StereoContextNetwork,
-                "Warp": Warp,
-                "BuildIndices": BuildIndices,
-                "StereoCostVolume": StereoCostVolume               
-                }, 
-            compile=True
-            )
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+    model.compile(
+        optimizer=optimizer, 
+        run_eagerly=run_eager   
+    )
+    model.load_weights(checkpoint_path).expect_partial()
 
-
-    model_path = f"{output_dir}/MADNet-before backprop"
-    #model.save(model_path)
-    tf.saved_model.save(model, model_path)
 
     # Get training data
     predict_dataset = StereoDatasetCreator(
@@ -112,9 +91,8 @@ def main(args):
         os.makedirs(output_dir, exist_ok=True)
         now = datetime.now()
         current_time = now.strftime("%Y%m%dT%H%M%SZ")
-        model_path = f"{output_dir}/MADNet-{current_time}"
-        #model.save(model_path)
-        tf.saved_model.save(model, model_path)
+        model_path = f"{output_dir}/MADNet-{current_time}.ckpt"
+        model.save_weights(model_path)
 
 
 if __name__ == "__main__":

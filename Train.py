@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 import argparse
-from custom_models import MADNet
+from custom_models import *
 from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
 
@@ -20,7 +20,7 @@ parser.add_argument("--val_disp_dir", help='path to left disparity maps folder',
 parser.add_argument("--shuffle", help='shuffle training dataset', action="store_true", default=False)
 parser.add_argument("--search_range", help='maximum dispacement (ie. smallest disparity)', default=2, type=int, required=False)
 parser.add_argument("-o", "--output_dir", help='path to folder for outputting tensorboard logs and saving model weights', required=True)
-parser.add_argument("--weights_path", help="path to pretrained MADNet saved model (for fine turning)", default=None, required=False)
+parser.add_argument("--checkpoint_path", help="path to pretrained MADNet checkpoint file (for fine turning)", default=None, required=False)
 parser.add_argument("--lr", help="initial value for learning rate",default=0.0001, type=float, required=False)
 parser.add_argument("--height", help='model image input height resolution', type=int, default=320)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=1216)
@@ -43,7 +43,7 @@ def main(args):
     shuffle = args.shuffle
     search_range = args.search_range
     output_dir = args.output_dir
-    weights_path = args.weights_path
+    checkpoint_path = args.checkpoint_path
     lr = args.lr
     height = args.height
     width = args.width
@@ -65,6 +65,10 @@ def main(args):
     # Initialise the model
     model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+
+    if checkpoint_path is not None:
+        model.load_weights(checkpoint_path)
+
     model.compile(
         optimizer=optimizer, 
         # losses and metrics below are only needed for evaluation
@@ -72,12 +76,6 @@ def main(args):
         metrics=[EndPointError(), Bad3()],
         run_eagerly = run_eager  
     )
-
-    if weights_path is not None:
-        #model = tf.keras.models.load_model(weights_path, custom_objects={"MADNet": MADNet}, compile=True)
-        #model = tf.saved_model.load(weights_path)
-        model.load_weights(weights_path)
-
 
     # Get training data
     train_dataset = StereoDatasetCreator(
@@ -148,8 +146,6 @@ def main(args):
         validation_steps=eval_steps,
         validation_freq=epoch_evals # number epoch evaluations 
     )
-
-    model.save(f"{output_dir}/MADNet-{num_epochs}-epochs-{epoch_steps}-epoch_steps")
 
 if __name__ == "__main__":
     main(args)
