@@ -3,7 +3,7 @@ import tensorflow as tf
 import argparse
 from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
-from losses import Bad3, EndPointError
+from losses_and_metrics import Bad3, EndPointError
 
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
@@ -14,6 +14,9 @@ parser=argparse.ArgumentParser(description='Script for training MADNet')
 parser.add_argument("--train_left_dir", help='path to left images folder', required=True)
 parser.add_argument("--train_right_dir", help='path to right images folder', required=True)
 parser.add_argument("--train_disp_dir", help='path to left disparity maps folder', default=None, required=False)
+parser.add_argument("--val_left_dir", help='path to left images folder', default=None, required=False)
+parser.add_argument("--val_right_dir", help='path to right images folder', default=None, required=False)
+parser.add_argument("--val_disp_dir", help='path to left disparity maps folder', default=None, required=False)
 parser.add_argument("--shuffle", help='shuffle training dataset', action="store_true", default=False)
 parser.add_argument("--search_range", help='maximum dispacement (ie. smallest disparity)', default=2, type=int, required=False)
 parser.add_argument("-o", "--output_dir", help='path to folder for outputting tensorboard logs and saving model weights', required=True)
@@ -32,6 +35,9 @@ def main(args):
     train_left_dir = args.train_left_dir
     train_right_dir = args.train_right_dir
     train_disp_dir = args.train_disp_dir
+    val_left_dir = args.val_left_dir
+    val_right_dir = args.val_right_dir
+    val_disp_dir = args.val_disp_dir
     shuffle = args.shuffle
     search_range = args.search_range
     output_dir = args.output_dir
@@ -45,7 +51,7 @@ def main(args):
     save_freq = args.save_freq
 
     run_eager = True
-    if train_disp_dir is None:
+    if train_disp_dir is None and val_disp_dir is None:
         # dont need to train eagerly when not using gt disparities 
         run_eager = False
 
@@ -77,20 +83,33 @@ def main(args):
         shuffle=shuffle,
         disp_dir=train_disp_dir
         ) 
-
     train_ds = train_dataset()
-
-
+    # Get validation data
+    val_ds = None
+    if val_left_dir is not None and val_right_dir is not None and val_disp_dir is not None:
+        val_dataset = StereoDatasetCreator(
+            left_dir=val_left_dir, 
+            right_dir=val_right_dir, 
+            batch_size=batch_size, 
+            height=height, 
+            width=width,
+            shuffle=shuffle,
+            disp_dir=val_disp_dir
+            ) 
+        val_ds = val_dataset()
+    
     # Create callbacks
     def scheduler(epoch, lr):
         if epoch < 400000:
-            return lr
+            lr = lr
         elif epoch < 600000:
-            return lr * 0.5
+            lr = lr * 0.5
         else:
             # learning_rate * decay_rate ^ (global_step / decay_steps)
             decay_rate = 0.5       
-            return lr * 0.5 * decay_rate ** (epoch // 600000)
+            lr = lr * 0.5 * decay_rate ** (epoch // 600000)
+        tf.summary.scalar('learning rate', data=lr, step=epoch)
+        return lr
 
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
@@ -118,7 +137,10 @@ def main(args):
             tensorboard_callback,
             save_callback,
             schedule_callback
-        ]
+        ],
+        validation_data=val_ds,
+        validation_steps=1,
+        validation_freq=save_freq # evaluates every save epoch
     )
 
     model.save(f"{output_dir}/MADNet-{num_epochs}-epochs-{epoch_steps}-epoch_steps")

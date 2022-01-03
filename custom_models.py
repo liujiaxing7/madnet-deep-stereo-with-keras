@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from keras.engine import data_adapter
 from matplotlib import cm
-from losses import SSIMLoss, ReconstructionLoss
+from losses_and_metrics import SSIMLoss, ReconstructionLoss, calculate_metrics
 
 
 def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
@@ -447,8 +447,8 @@ class MADNet(tf.keras.Model):
 
     def train_step(self, data):
         # Left, right image inputs and groundtruth target disparity
-        #inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
-        inputs, gt = data
+        inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+        #inputs, gt = data
         left_input = inputs["left_input"]
         right_input = inputs["right_input"]        
 
@@ -572,12 +572,20 @@ class MADNet(tf.keras.Model):
         ############################REFINEMENT################################
         self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
-        return {"D6_loss": self.M6.loss, 
-                "D5_loss": self.M5.loss, 
-                "D4_loss": self.M4.loss, 
-                "D3_loss": self.M3.loss, 
-                "D2_loss": self.M2.loss, 
-                "final_loss": self.refinement_module.loss}
+        losses_metrics_dict = {
+            "D6_loss": self.M6.loss, 
+            "D5_loss": self.M5.loss, 
+            "D4_loss": self.M4.loss, 
+            "D3_loss": self.M3.loss, 
+            "D2_loss": self.M2.loss, 
+            "final_loss": self.refinement_module.loss
+            }
+
+        if gt is not None:
+            metrics_dict = calculate_metrics(gt, final_disparity, 3)
+            losses_metrics_dict.update(metrics_dict)
+
+        return losses_metrics_dict
   
 
     # Forward pass of the model
