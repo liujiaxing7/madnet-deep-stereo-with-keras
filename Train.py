@@ -55,9 +55,6 @@ def main(args):
     eval_steps = args.eval_steps
 
     run_eager = True
-    if train_disp_dir is None and val_disp_dir is None:
-        # dont need to train eagerly when not using gt disparities 
-        run_eager = False
 
     # Create output folder if it doesnt already exist
     os.makedirs(output_dir, exist_ok=True)

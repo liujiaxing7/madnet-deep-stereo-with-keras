@@ -33,10 +33,10 @@ class StereoDatasetCreator():
         self.width = width
         self.shuffle = shuffle
 
-        self.left_names = tf.constant([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")])
-        self.right_names = tf.constant([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
+        self.left_names = tf.constant(sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]))
+        self.right_names = tf.constant(sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")]))
         if self.disp_dir is not None:
-            self.disp_names = tf.constant([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
+            self.disp_names = tf.constant(sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")]))
 
         # Check that there is a left image for every right image
         self.num_left = len(self.left_names)

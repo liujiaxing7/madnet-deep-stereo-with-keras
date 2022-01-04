@@ -757,12 +757,21 @@ class MADNet(tf.keras.Model):
             right_F06_grads = tape.gradient(self.M6.loss, self.right_conv11.trainable_weights)
             # The current modules output is used in the following modules loss function 
             M6_grads = tape.gradient(self.M5.loss, self.M6.trainable_weights) 
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
-            self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))             
+        else:
+            # set grads to zero (no change to weights)
+            left_F6_grads = [tf.zeros_like(weights) for weights in self.left_conv12.trainable_weights]
+            left_F06_grads = [tf.zeros_like(weights) for weights in self.left_conv11.trainable_weights]
+            right_F6_grads = [tf.zeros_like(weights) for weights in self.right_conv12.trainable_weights]
+            right_F06_grads = [tf.zeros_like(weights) for weights in self.right_conv11.trainable_weights]
+            # The current modules output is used in the following modules loss function 
+            M6_grads = [tf.zeros_like(weights) for weights in self.M6.trainable_weights] 
+
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F6_grads, self.left_conv12.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F06_grads, self.left_conv11.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F6_grads, self.right_conv12.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F06_grads, self.right_conv11.trainable_weights))
+        self.optimizer.apply_gradients(zip(M6_grads, self.M6.trainable_weights))             
         
         if self.M5.loss is not None and adapt_dict["D5"]:
             ############################SCALE 5###################################
@@ -772,12 +781,21 @@ class MADNet(tf.keras.Model):
             right_F05_grads = tape.gradient(self.M5.loss, self.right_conv9.trainable_weights)
             # The current modules output is used in the following modules loss function 
             M5_grads = tape.gradient(self.M4.loss, self.M5.trainable_weights)   
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F5_grads, self.right_conv10.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F05_grads, self.right_conv9.trainable_weights))
-            self.optimizer.apply_gradients(zip(M5_grads, self.M5.trainable_weights))  
+        else:
+            # set grads to zero (no change to weights)
+            left_F5_grads = [tf.zeros_like(weights) for weights in self.left_conv10.trainable_weights]
+            left_F05_grads = [tf.zeros_like(weights) for weights in self.left_conv9.trainable_weights]
+            right_F5_grads = [tf.zeros_like(weights) for weights in self.right_conv10.trainable_weights]
+            right_F05_grads = [tf.zeros_like(weights) for weights in self.right_conv9.trainable_weights]
+            # The current modules output is used in the following modules loss function 
+            M5_grads = [tf.zeros_like(weights) for weights in self.M5.trainable_weights] 
+
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F5_grads, self.left_conv10.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F05_grads, self.left_conv9.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F5_grads, self.right_conv10.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F05_grads, self.right_conv9.trainable_weights))
+        self.optimizer.apply_gradients(zip(M5_grads, self.M5.trainable_weights))  
 
         if self.M4.loss is not None and adapt_dict["D4"]:
             ############################SCALE 4###################################
@@ -786,13 +804,22 @@ class MADNet(tf.keras.Model):
             right_F4_grads = tape.gradient(self.M4.loss, self.right_conv8.trainable_weights)
             right_F04_grads = tape.gradient(self.M4.loss, self.right_conv7.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M4_grads = tape.gradient(self.M3.loss, self.M4.trainable_weights)     
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F4_grads, self.right_conv8.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F04_grads, self.right_conv7.trainable_weights))
-            self.optimizer.apply_gradients(zip(M4_grads, self.M4.trainable_weights))         
+            M4_grads = tape.gradient(self.M3.loss, self.M4.trainable_weights)  
+        else:
+            # set grads to zero (no change to weights)
+            left_F4_grads = [tf.zeros_like(weights) for weights in self.left_conv8.trainable_weights]
+            left_F04_grads = [tf.zeros_like(weights) for weights in self.left_conv7.trainable_weights]
+            right_F4_grads = [tf.zeros_like(weights) for weights in self.right_conv8.trainable_weights]
+            right_F04_grads = [tf.zeros_like(weights) for weights in self.right_conv7.trainable_weights]
+            # The current modules output is used in the following modules loss function 
+            M4_grads = [tf.zeros_like(weights) for weights in self.M4.trainable_weights]             
+
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F4_grads, self.left_conv8.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F04_grads, self.left_conv7.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F4_grads, self.right_conv8.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F04_grads, self.right_conv7.trainable_weights))
+        self.optimizer.apply_gradients(zip(M4_grads, self.M4.trainable_weights))         
         
         if self.M3.loss is not None and adapt_dict["D3"]:
             ############################SCALE 3###################################
@@ -801,13 +828,22 @@ class MADNet(tf.keras.Model):
             right_F3_grads = tape.gradient(self.M3.loss, self.right_conv6.trainable_weights)
             right_F03_grads = tape.gradient(self.M3.loss, self.right_conv5.trainable_weights)
             # The current modules output is used in the following modules loss function 
-            M3_grads = tape.gradient(self.M2.loss, self.M3.trainable_weights)            
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F3_grads, self.right_conv6.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F03_grads, self.right_conv5.trainable_weights))
-            self.optimizer.apply_gradients(zip(M3_grads, self.M3.trainable_weights))      
+            M3_grads = tape.gradient(self.M2.loss, self.M3.trainable_weights)  
+        else:
+            # set grads to zero (no change to weights)
+            left_F3_grads = [tf.zeros_like(weights) for weights in self.left_conv6.trainable_weights]
+            left_F03_grads = [tf.zeros_like(weights) for weights in self.left_conv5.trainable_weights]
+            right_F3_grads = [tf.zeros_like(weights) for weights in self.right_conv6.trainable_weights]
+            right_F03_grads = [tf.zeros_like(weights) for weights in self.right_conv5.trainable_weights]
+            # The current modules output is used in the following modules loss function 
+            M3_grads = [tf.zeros_like(weights) for weights in self.M3.trainable_weights]              
+
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F3_grads, self.left_conv6.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F03_grads, self.left_conv5.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F3_grads, self.right_conv6.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F03_grads, self.right_conv5.trainable_weights))
+        self.optimizer.apply_gradients(zip(M3_grads, self.M3.trainable_weights))      
 
         if self.M2.loss is not None and adapt_dict["D2"]:
             ############################SCALE 2###################################           
@@ -817,30 +853,47 @@ class MADNet(tf.keras.Model):
             right_F02_grads = tape.gradient(self.M2.loss, self.right_conv3.trainable_weights)
             # The current modules output is used in the following modules loss function 
             M2_grads = tape.gradient(self.refinement_module.loss, self.M2.trainable_weights) 
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F2_grads, self.right_conv4.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F02_grads, self.right_conv3.trainable_weights))
-            self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))    
+
             ############################SCALE 1###################################
             # Scale 1 doesnt have a module, so need to use the loss from scales 2's module
             left_F1_grads = tape.gradient(self.M2.loss, self.left_conv2.trainable_weights)
             left_F01_grads = tape.gradient(self.M2.loss, self.left_conv1.trainable_weights)
             right_F1_grads = tape.gradient(self.M2.loss, self.right_conv2.trainable_weights)
             right_F01_grads = tape.gradient(self.M2.loss, self.right_conv1.trainable_weights)
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
-            self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F1_grads, self.right_conv2.trainable_weights))
-            self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
+        else:
+            # set grads to zero (no change to weights)
+            left_F2_grads = [tf.zeros_like(weights) for weights in self.left_conv4.trainable_weights]
+            left_F02_grads = [tf.zeros_like(weights) for weights in self.left_conv3.trainable_weights]
+            right_F2_grads = [tf.zeros_like(weights) for weights in self.right_conv4.trainable_weights]
+            right_F02_grads = [tf.zeros_like(weights) for weights in self.right_conv3.trainable_weights]
+            # The current modules output is used in the following modules loss function 
+            M2_grads = [tf.zeros_like(weights) for weights in self.M2.trainable_weights] 
+            # set grads to zero (no change to weights)
+            left_F1_grads = [tf.zeros_like(weights) for weights in self.left_conv2.trainable_weights]
+            left_F01_grads = [tf.zeros_like(weights) for weights in self.left_conv1.trainable_weights]
+            right_F1_grads = [tf.zeros_like(weights) for weights in self.right_conv2.trainable_weights]
+            right_F01_grads = [tf.zeros_like(weights) for weights in self.right_conv1.trainable_weights]            
+
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F2_grads, self.left_conv4.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F02_grads, self.left_conv3.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F2_grads, self.right_conv4.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F02_grads, self.right_conv3.trainable_weights))
+        self.optimizer.apply_gradients(zip(M2_grads, self.M2.trainable_weights))  
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(left_F1_grads, self.left_conv2.trainable_weights))
+        self.optimizer.apply_gradients(zip(left_F01_grads, self.left_conv1.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F1_grads, self.right_conv2.trainable_weights))
+        self.optimizer.apply_gradients(zip(right_F01_grads, self.right_conv1.trainable_weights))
         
         if self.refinement_module.loss is not None and adapt_dict["final_loss"]:
             ############################REFINEMENT################################
-
             refinement_grads = tape.gradient(self.refinement_module.loss, self.refinement_module.trainable_weights)
-            # Applying gradients
-            self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
+        else:
+            # set grads to zero (no change to weights)
+            refinement_grads = [tf.zeros_like(weights) for weights in self.refinement_module.trainable_weights]            
+        # Applying gradients
+        self.optimizer.apply_gradients(zip(refinement_grads, self.refinement_module.trainable_weights))
 
         return final_disparity
 

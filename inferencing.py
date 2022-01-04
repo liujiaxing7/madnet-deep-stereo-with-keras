@@ -44,10 +44,6 @@ def main(args):
     steps = args.steps
 
     run_eager = True
-    if mad_pred == False or num_adapt >= 6:
-        # dont need to train eagerly when not performing MAD or 
-        # when performing full MAD
-        run_eager = False
 
 
     # Initialise the model
@@ -80,7 +76,6 @@ def main(args):
     # View disparity predictions
     if show_pred:
         for i in range(disparities.shape[0]):
-            fig = plt.figure(figsize=(8,6))
             plt.axis("off")
             plt.grid(visible=None)
             plt.imshow(disparities[i])
