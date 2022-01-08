@@ -60,21 +60,21 @@ def main(args):
     # Create output folder if it doesnt already exist
     os.makedirs(output_dir, exist_ok=True)
 
-    #with strategy.scope():
-    # Initialise the model
-    model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+    with strategy.scope():
+        # Initialise the model
+        model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
-    if checkpoint_path is not None:
-        model.load_weights(checkpoint_path)
+        if checkpoint_path is not None:
+            model.load_weights(checkpoint_path)
 
-    model.compile(
-        optimizer=optimizer, 
-        # losses and metrics below are only needed for evaluation
-        loss=[ReconstructionLoss()],
-        metrics=[EndPointError(), Bad3()],
-        run_eagerly = run_eager  
-    )
+        model.compile(
+            optimizer=optimizer, 
+            # losses and metrics below are only needed for evaluation
+            loss=[ReconstructionLoss()],
+            metrics=[EndPointError(), Bad3()],
+            run_eagerly = run_eager  
+        )
 
     # Get training data
     train_dataset = StereoDatasetCreator(

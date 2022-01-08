@@ -472,12 +472,23 @@ class MADNet(tf.keras.Model):
         with tf.GradientTape(persistent=True) as tape:
             # Forward pass
             final_disparity = self(inputs={'left_input': left_input, 'right_input': right_input}, target=gt, training=True)
+            # Get average losses based on batch size and number of replicas
+            if tf.distribute.has_strategy():
+                strategy = tf.distribute.get_strategy()
+                num_replicas = strategy.num_replicas_in_sync
+            else:
+                num_replicas = 1
+            global_batch_size = self.batch_size * num_replicas
 
+            self.M6.loss *= (1. / global_batch_size)
+            self.M5.loss *= (1. / global_batch_size)
+            self.M4.loss *= (1. / global_batch_size)
+            self.M3.loss *= (1. / global_batch_size)
+            self.M2.loss *= (1. / global_batch_size)
+            self.refinement_module.loss *= (1. / global_batch_size)  
 
-        print(f"steps per execution: {self._steps_per_execution}")
-
-        # Tensorboard images
-        if self._train_counter % self._steps_per_execution == 0:
+        # Tensorboard images will display every 1000 steps
+        if self._train_counter % 1000 == 0:
             tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
             if gt is not None:
                 tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'), step=self._train_counter, max_outputs=1)
@@ -535,6 +546,8 @@ class MADNet(tf.keras.Model):
         ############################REFINEMENT################################
         refinement_grads = tape.gradient(self.refinement_module.loss, self.refinement_module.trainable_weights)
 
+
+        assert left_F6_grads[0] is not None, "empty grads"
 
         #**************************Apply Gradients***************************
         #############################SCALE 6#################################
@@ -676,7 +689,6 @@ class MADNet(tf.keras.Model):
             self.M5.loss = self.loss_fn(target, D5)
             target = tf.image.resize(target, [tf.shape(D6)[1], tf.shape(D6)[2]], method="bilinear")
             self.M6.loss = self.loss_fn(target, D6)           
-    
         return final_disparity
 
     def predict_step(self, data):
@@ -700,7 +712,20 @@ class MADNet(tf.keras.Model):
         with tf.GradientTape(persistent=True) as tape:
             # Forward pass
             final_disparity = self(x, training=self.MAD_predict)
+            # Get average losses based on batch size and number of replicas
+            if tf.distribute.has_strategy():
+                strategy = tf.distribute.get_strategy()
+                num_replicas = strategy.num_replicas_in_sync
+            else:
+                num_replicas = 1
+            global_batch_size = self.batch_size * num_replicas
 
+            self.M6.loss *= (1. / global_batch_size)
+            self.M5.loss *= (1. / global_batch_size)
+            self.M4.loss *= (1. / global_batch_size)
+            self.M3.loss *= (1. / global_batch_size)
+            self.M2.loss *= (1. / global_batch_size)
+            self.refinement_module.loss *= (1. / global_batch_size)  
 
         #((((((((((((((((((((((((Select module/s for adaptation))))))))))))))))))))))))
         losses = [
