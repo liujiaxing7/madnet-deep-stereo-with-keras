@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 import argparse
-from custom_models import *
+from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
 import matplotlib.pyplot as plt
 from datetime import datetime

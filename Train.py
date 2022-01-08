@@ -1,13 +1,14 @@
 import os
 import tensorflow as tf
 import argparse
-from custom_models import *
+from custom_models import MADNet
 from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
 
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
-
+strategy = tf.distribute.MirroredStrategy()
+print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 
 parser=argparse.ArgumentParser(description='Script for training MADNet')
@@ -59,6 +60,7 @@ def main(args):
     # Create output folder if it doesnt already exist
     os.makedirs(output_dir, exist_ok=True)
 
+    #with strategy.scope():
     # Initialise the model
     model = MADNet(height=height, width=width, search_range=search_range, batch_size=batch_size)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
@@ -130,7 +132,7 @@ def main(args):
 
     # Fit the model
     history = model.fit(
-        x=train_ds,
+        x=train_ds.repeat(),
         epochs=num_epochs,
         verbose=1,
         steps_per_epoch=epoch_steps,
@@ -139,7 +141,7 @@ def main(args):
             save_callback,
             schedule_callback
         ],
-        validation_data=val_ds,
+        validation_data=val_ds.repeat(),
         validation_steps=eval_steps,
         validation_freq=epoch_evals # number epoch evaluations 
     )

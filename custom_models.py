@@ -474,12 +474,15 @@ class MADNet(tf.keras.Model):
             final_disparity = self(inputs={'left_input': left_input, 'right_input': right_input}, target=gt, training=True)
 
 
+        print(f"steps per execution: {self._steps_per_execution}")
+
         # Tensorboard images
-        tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
-        if gt is not None:
-            tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'), step=self._train_counter, max_outputs=1)
-        tf.summary.image('03_left_image', left_input, step=self._train_counter, max_outputs=1)
-        tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
+        if self._train_counter % self._steps_per_execution == 0:
+            tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+            if gt is not None:
+                tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'), step=self._train_counter, max_outputs=1)
+            tf.summary.image('03_left_image', left_input, step=self._train_counter, max_outputs=1)
+            tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
