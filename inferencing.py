@@ -20,7 +20,7 @@ parser.add_argument("--lr", help="learning rate (only used if weights are a chec
 parser.add_argument("--height", help='model image input height resolution', type=int, default=320)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=1216)
 parser.add_argument("--batch_size", help='batch size to use during training',type=int, default=1)
-parser.add_argument("--use_full_res_loss", help='for using only the final resolution loss for backpropagation', action="store_true", default=False)
+parser.add_argument("--use_full_res_loss", help='for using only the final resolution loss during backpropagation', action="store_true", default=False)
 parser.add_argument("--show_pred", help='displays the models predictions', action="store_true", default=False)
 parser.add_argument("--steps", help='number of steps to inference, set to None to inference all the data', default=None, type=int, required=False)
 

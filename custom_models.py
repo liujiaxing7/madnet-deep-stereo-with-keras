@@ -339,9 +339,9 @@ class ModuleM(tf.keras.Model):
         costs = self.cost_volume(left, warped_left, self.search_range)
 
         # Get the disparity using cost volume between left and warped left images
-        module_disparity = self.stereo_estimator(costs)
+        self.module_disparity = self.stereo_estimator(costs)
 
-        return module_disparity
+        return self.module_disparity
 
     def get_config(self):
         config = super(ModuleM, self).get_config()
@@ -498,12 +498,18 @@ class MADNet(tf.keras.Model):
 
 
         # Tensorboard images will display every 1000 steps
-        if self._train_counter % 1000 == 0:
+        if self._train_counter % 2 == 0:
             tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
             if gt is not None:
                 tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'), step=self._train_counter, max_outputs=1)
             tf.summary.image('03_left_image', left_input, step=self._train_counter, max_outputs=1)
             tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
+            tf.summary.image('05_module_2_disparity', colorize_img(self.M2.module_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+            tf.summary.image('05_module_3_disparity', colorize_img(self.M3.module_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+            tf.summary.image('05_module_4_disparity', colorize_img(self.M4.module_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+            tf.summary.image('05_module_5_disparity', colorize_img(self.M5.module_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+            tf.summary.image('05_module_6_disparity', colorize_img(self.M6.module_disparity, cmap='jet'), step=self._train_counter, max_outputs=1)
+
 
 
         #((((((((((((((((((((((((Select modules using losses))))))))))))))))))))))))
