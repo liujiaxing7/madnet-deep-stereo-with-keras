@@ -29,6 +29,7 @@ parser.add_argument("--batch_size", help='batch size to use during training',typ
 parser.add_argument("--num_epochs", help='number of training epochs', type=int, default=1000)
 parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, default=1000)
 parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=10)
+parser.add_argument("--use_full_res_loss", help='for using only the final resolution loss for backpropagation', action="store_true", default=False)
 parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
 parser.add_argument("--eval_steps", help='number of batches to process per evaluation', type=int, default=1)
 args=parser.parse_args()
@@ -52,6 +53,7 @@ def main(args):
     num_epochs = args.num_epochs
     epoch_steps = args.epoch_steps
     save_freq = args.save_freq
+    use_full_res_loss = args.use_full_res_loss
     epoch_evals = args.epoch_evals
     eval_steps = args.eval_steps
 
@@ -130,6 +132,8 @@ def main(args):
         update_freq="batch"
         )
 
+
+    model.use_full_res_loss = use_full_res_loss
     # Fit the model
     history = model.fit(
         x=train_ds.repeat(),

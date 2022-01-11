@@ -20,6 +20,7 @@ parser.add_argument("--lr", help="learning rate (only used if weights are a chec
 parser.add_argument("--height", help='model image input height resolution', type=int, default=320)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=1216)
 parser.add_argument("--batch_size", help='batch size to use during training',type=int, default=1)
+parser.add_argument("--use_full_res_loss", help='for using only the final resolution loss for backpropagation', action="store_true", default=False)
 parser.add_argument("--show_pred", help='displays the models predictions', action="store_true", default=False)
 parser.add_argument("--steps", help='number of steps to inference, set to None to inference all the data', default=None, type=int, required=False)
 
@@ -39,6 +40,7 @@ def main(args):
     height = args.height
     width = args.width
     batch_size = args.batch_size
+    use_full_res_loss = args.use_full_res_loss
     show_pred = args.show_pred
     steps = args.steps
 
@@ -70,6 +72,7 @@ def main(args):
     model.run_eagerly = run_eager
     model.MAD_predict = mad_pred
     model.num_adapt_modules = num_adapt
+    model.use_full_res_loss = use_full_res_loss
     # inference the dataset
     disparities = model.predict(predict_ds, steps=steps)
     # View disparity predictions

@@ -70,13 +70,13 @@ class StereoCostVolume(tf.keras.layers.Layer):
 
 class BuildIndices(tf.keras.layers.Layer):
     """
-	Given a flow or disparity generate the coordinates 
+    Given a flow or disparity generate the coordinates
     of source pixels to sample from [batch, height_t, width_t, 2]
     Args:
-	    coords: Generic optical flow or disparity 
+        coords: Generic optical flow or disparity
     Returns:
-        coordinates to sample from.   
-    
+        coordinates to sample from.
+
     """
 
     def __init__(self, name="build_indices", batch_size=1, **kwargs):
@@ -387,6 +387,8 @@ class MADNet(tf.keras.Model):
         # Selects the number of modules to perform MAD during predict. 
         # Default is 1, >= 6 is full adaptation
         self.num_adapt_modules = 1
+        # Only use the full resolution loss for backpropagation
+        self.use_full_res_loss = False
         # Loss function for supervised training (with groundtruth)
         self.loss_fn = ReconstructionLoss() 
 
@@ -486,6 +488,14 @@ class MADNet(tf.keras.Model):
             self.M3.loss *= (1. / global_batch_size)
             self.M2.loss *= (1. / global_batch_size)
             self.refinement_module.loss *= (1. / global_batch_size)  
+
+            if self.use_full_res_loss:
+                self.M6.loss = self.refinement_module.loss
+                self.M5.loss = self.refinement_module.loss
+                self.M4.loss = self.refinement_module.loss
+                self.M3.loss = self.refinement_module.loss
+                self.M2.loss = self.refinement_module.loss
+
 
         # Tensorboard images will display every 1000 steps
         if self._train_counter % 1000 == 0:
@@ -726,7 +736,12 @@ class MADNet(tf.keras.Model):
             self.M3.loss *= (1. / global_batch_size)
             self.M2.loss *= (1. / global_batch_size)
             self.refinement_module.loss *= (1. / global_batch_size)  
-
+            if self.use_full_res_loss:
+                self.M6.loss = self.refinement_module.loss
+                self.M5.loss = self.refinement_module.loss
+                self.M4.loss = self.refinement_module.loss
+                self.M3.loss = self.refinement_module.loss
+                self.M2.loss = self.refinement_module.loss
         #((((((((((((((((((((((((Select module/s for adaptation))))))))))))))))))))))))
         losses = [
                 self.M6.loss, 
