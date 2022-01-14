@@ -3,25 +3,6 @@ import numpy as np
 from keras.engine import data_adapter
 from matplotlib import cm
 
-def MakeModel(func):
-    def wrapper(name, *args, **kwargs):
-        key = f'__{func.__name__}_guid' 
-        if key not in globals().keys():
-            globals()[key] = 1
-
-        id = globals()[key]
-        name = f'{func.__name__}_{id}'
-        internal_fn = func(*args, **kwargs)
-        def _make_model(*args):
-            inputs = [tf.keras.layers.Input(shape=a.shape[1:]) for a in args]
-            output = internal_fn(*inputs)
-            model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-            #model.shape = output.shape # monkey-patching!
-            return model(*args)
-        globals()[key] = id + 1
-        return _make_model
-    return wrapper
-
 
 def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
     """
@@ -53,34 +34,43 @@ def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
 
 
 # https://github.com/philferriere/tfoptflow/blob/bdc7a72e78008d1cd6db46e4667dffc2bab1fe9e/tfoptflow/core_costvol.py
-@MakeModel
-def StereoCostVolume(name="cost_volume", **kwargs):
+def StereoCostVolume(name="cost_volume", search_range=2):
     """Build cost volume for associating a pixel from the left image with its corresponding pixels in the right image.
     Args:
         c1: Level of the feature pyramid of the left image
         warp: Warped level of the feature pyramid of the right image
         search_range: Search range (maximum displacement)
     """
-    def _block(c1, warp, search_range):
-        padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
-        width = c1.shape.as_list()[2]
-        max_offset = search_range * 2 + 1
+    def _block(inputs):
 
-        cost_vol = []
-        for i in range(0, max_offset):
+        def internal_fn(inputs):
+            c1, warp = inputs
+            padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
+            width = c1.shape.as_list()[2]
+            max_offset = search_range * 2 + 1
 
-            slice = padded_lvl[:, :, i:width+i, :]
-            cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
-            cost_vol.append(cost)
+            cost_vol = []
+            for i in range(0, max_offset):
+                slice = padded_lvl[:, :, i:width+i, :]
+                cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
+                cost_vol.append(cost)
 
-        cost_vol = tf.concat(cost_vol, axis=3)
+            cost_vol = tf.concat(cost_vol, axis=3)
+            cost_curve = tf.concat([c1, cost_vol], axis=3)
 
-        cost_curve = tf.concat([c1, cost_vol], axis=3)
+            return cost_curve
 
-        return cost_curve
+        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        output = internal_fn(inputs)
+
+        cost_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        cost_model.shape = output.shape
+
+        return cost_model
+
     return _block
 
-@MakeModel
+
 def BuildIndices(name="build_indices", batch_size=1):
     """
     Given a flow or disparity generate the coordinates
@@ -93,27 +83,34 @@ def BuildIndices(name="build_indices", batch_size=1):
     """
     def _block(coords):
 
-        _, height, width, _ = coords.get_shape().as_list()
+        def internal_fn(coords):
+            _, height, width, _ = coords.get_shape().as_list()
 
-        pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
-        batches_coords = np.ones((batch_size, height, width, 1), dtype=np.float32)
+            pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
+            batches_coords = np.ones((batch_size, height, width, 1), dtype=np.float32)
 
-        for i in range(0, batch_size):
-            batches_coords[i][:][:][:] = i
-        # build pixel coordinates and their disparity
-        for i in range(0, height):
-            for j in range(0, width):
-                pixel_coords[0][i][j][0] = j
-                pixel_coords[0][i][j][1] = i
+            for i in range(0, batch_size):
+                batches_coords[i][:][:][:] = i
+            # build pixel coordinates and their disparity
+            for i in range(0, height):
+                for j in range(0, width):
+                    pixel_coords[0][i][j][0] = j
+                    pixel_coords[0][i][j][1] = i
 
-        pixel_coords = tf.constant(pixel_coords, tf.float32)
+            pixel_coords = tf.constant(pixel_coords, tf.float32)
+            output = tf.concat([batches_coords, pixel_coords + coords], -1)
+            return output
 
-        output = tf.concat([batches_coords, pixel_coords + coords], -1)            
+        inputs = tf.keras.layers.Input(shape=coords.shape[1:])
+        output = internal_fn(inputs)
 
-        return output
+        indices_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        indices_model.shape = output.shape
+
+        return indices_model
     return _block
 
-@MakeModel
+
 def Warp(name="warp"):
     """
     Construct a new image by bilinear sampling from the input image.
@@ -129,45 +126,53 @@ def Warp(name="warp"):
         which ideally is very similar to the left image
     """
 
-    def _block(imgs, coords):
-            
-        coord_b, coords_x, coords_y = tf.split(coords, [1, 1, 1], axis=3)
+    def _block(inputs):
+        def internal_fn(inputs):
+            imgs, coords = inputs
+            coord_b, coords_x, coords_y = tf.split(coords, [1, 1, 1], axis=3)
 
-        coords_x = tf.cast(coords_x, 'float32')
-        coords_y = tf.cast(coords_y, 'float32')
+            coords_x = tf.cast(coords_x, 'float32')
+            coords_y = tf.cast(coords_y, 'float32')
 
-        x0 = tf.floor(coords_x)
-        x1 = x0 + 1
-        y0 = tf.floor(coords_y)
+            x0 = tf.floor(coords_x)
+            x1 = x0 + 1
+            y0 = tf.floor(coords_y)
 
-        y_max = tf.cast(tf.shape(imgs)[1] - 1, 'float32')
-        x_max = tf.cast(tf.shape(imgs)[2] - 1, 'float32')
-        zero = tf.zeros([1],dtype=tf.float32)
+            y_max = tf.cast(tf.shape(imgs)[1] - 1, 'float32')
+            x_max = tf.cast(tf.shape(imgs)[2] - 1, 'float32')
+            zero = tf.zeros([1],dtype=tf.float32)
 
-        x0_safe = tf.clip_by_value(x0, zero[0], x_max)
-        y0_safe = tf.clip_by_value(y0, zero[0], y_max)
-        x1_safe = tf.clip_by_value(x1, zero[0], x_max)
+            x0_safe = tf.clip_by_value(x0, zero[0], x_max)
+            y0_safe = tf.clip_by_value(y0, zero[0], y_max)
+            x1_safe = tf.clip_by_value(x1, zero[0], x_max)
 
-        # bilinear interp weights, with points outside the grid having weight 0
-        wt_x0 = (x1 - coords_x) * tf.cast(tf.equal(x0, x0_safe), 'float32')
-        wt_x1 = (coords_x - x0) * tf.cast(tf.equal(x1, x1_safe), 'float32')
+            # bilinear interp weights, with points outside the grid having weight 0
+            wt_x0 = (x1 - coords_x) * tf.cast(tf.equal(x0, x0_safe), 'float32')
+            wt_x1 = (coords_x - x0) * tf.cast(tf.equal(x1, x1_safe), 'float32')
 
 
-        im00 = tf.cast(tf.gather_nd(imgs, tf.cast(
-            tf.concat([coord_b, y0_safe, x0_safe], -1), 'int32')), 'float32')
-        im01 = tf.cast(tf.gather_nd(imgs, tf.cast(
-            tf.concat([coord_b, y0_safe, x1_safe], -1), 'int32')), 'float32')
+            im00 = tf.cast(tf.gather_nd(imgs, tf.cast(
+                tf.concat([coord_b, y0_safe, x0_safe], -1), 'int32')), 'float32')
+            im01 = tf.cast(tf.gather_nd(imgs, tf.cast(
+                tf.concat([coord_b, y0_safe, x1_safe], -1), 'int32')), 'float32')
 
-        output = tf.add_n([
-            wt_x0 * im00, wt_x1 * im01
-        ])
+            output = tf.add_n([
+                wt_x0 * im00, wt_x1 * im01
+            ])
+            return output
 
-        return output
+        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        output = internal_fn(inputs)
+
+        warp_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        warp_model.shape = output.shape
+
+        return warp_model
+
     return _block
 
 
-@MakeModel
-def StereoContextNetwork(name="residual_refinement_network", batch_size=1):
+def StereoContextNetwork(name="residual_refinement_network", batch_size=1, output_height=320, output_width=1216):
     """
     Final Layer in MADNet.
     Calculates the reprojection loss if training=True.
@@ -190,24 +195,35 @@ def StereoContextNetwork(name="residual_refinement_network", batch_size=1):
     add = tf.keras.layers.Add(name="context_disp")
     concat = tf.keras.layers.Concatenate(axis=-1)
 
-    def _block(input, disp, final_left, final_right):
-        volume = concat([input, disp])
+    def _block(inputs):
+        def internal_fn(inputs):
+            input, disp = inputs
+            #volume = concat([input, disp])
+            volume = tf.keras.layers.concatenate([input, disp], axis=-1)
 
-        x = context1(volume)
-        x = context2(x)
-        x = context3(x)
-        x = context4(x)
-        x = context5(x)
-        x = context6(x)
-        x = context7(x)
+            x = context1(volume)
+            x = context2(x)
+            x = context3(x)
+            x = context4(x)
+            x = context5(x)
+            x = context6(x)
+            x = context7(x)
 
-        context_disp = add([disp, x])
-        final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=final_left.shape[1], width=final_left.shape[2], interpolation='bilinear')(context_disp)
+            context_disp = add([disp, x])
+            final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=output_height, width=output_width, interpolation='bilinear')(context_disp)
 
-        return final_disparity
+            return final_disparity
+
+        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        output = internal_fn(inputs)
+
+        refinement_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        refinement_model.shape = output.shape
+        return refinement_model
+
     return _block
 
-@MakeModel
+
 def StereoEstimator(name="volume_filtering"):
     """
     This is the stereo estimation network at resolution n.
@@ -226,50 +242,84 @@ def StereoEstimator(name="volume_filtering"):
     disp6 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), strides=1, padding="same", activation="linear", use_bias=True, name="disp6")
     concat = tf.keras.layers.Concatenate(axis=-1)
 
-    def _block(costs, upsampled_disp=None):
-        if upsampled_disp is not None:
-            volume = concat([costs, upsampled_disp])
+    def _block(inputs):
+        def internal_fn(inputs):
+            if type(inputs) is list:
+                costs, upsampled_disp = inputs
+                # volume = concat([costs, upsampled_disp])
+                volume = tf.keras.layers.concatenate([costs, upsampled_disp], axis=-1)
+            else:
+                volume = inputs
+
+            x = disp1(volume)
+            x = disp2(x)
+            x = disp3(x)
+            x = disp4(x)
+            x = disp5(x)
+            x = disp6(x)
+            return x
+
+        if type(inputs) is list:
+            inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
         else:
-            volume = costs
-        x = disp1(volume)
-        x = disp2(x)
-        x = disp3(x)
-        x = disp4(x)
-        x = disp5(x)
-        x = disp6(x)
-        return x
+            inputs = tf.keras.layers.Input(shape=inputs.shape[1:])
+
+        output = internal_fn(inputs)
+
+        estimator_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        estimator_model.shape = output.shape
+        return estimator_model
+
     return _block
 
-@MakeModel
 def ModuleM(name, layer, search_range=2, batch_size=1):
     """
     Module MX is a sub-module of MADNet, which can be trained individually for 
     online adaptation using the MAD (Modular ADaptaion) method.
     """
-    cost_volume = StereoCostVolume(name=f"cost_{layer}")
+    cost_volume = StereoCostVolume(name=f"cost_{layer}", search_range=search_range)
     stereo_estimator = StereoEstimator(name=f"volume_filtering_{layer}")
+    build_indices = BuildIndices(name=f"build_indices_{layer}", batch_size=batch_size)
+    warp = Warp(name=f"warp_{layer}")
 
-    def _block(left, right, prev_disp=None):
+    def _block(inputs):
+        def internal_fn(inputs):
+            # Check if layer is the bottom of the pyramid
+            if len(inputs) == 3:
+                left, right, prev_disp = inputs
+                # Upsample disparity from previous layer
+                upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
+                coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
+                indices = build_indices(coords)
+                # Warp the right image into the left using upsampled disparity
+                warped_left = warp([right, indices])
+            else:
+                left, right = inputs
+                # No previous disparity exits, so use right image instead of warped left
+                warped_left = right
 
-        height, width = (left.shape.as_list()[1], left.shape.as_list()[2])
-        # Check if layer is the bottom of the pyramid
-        if prev_disp is not None:
-            # Upsample disparity from previous layer
-            upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
-            coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
-            indices = BuildIndices(name=f"build_indices_{layer}", batch_size=batch_size)(coords)
-            # Warp the right image into the left using upsampled disparity
-            warped_left = Warp(name=f"warp_{layer}")(right, indices)
+            costs = cost_volume([left, warped_left])
+
+            # Get the disparity using cost volume between left and warped left images
+            if len(inputs) == 3:
+                module_disparity = stereo_estimator([costs, prev_disp])
+            else:
+                module_disparity = stereo_estimator(costs)
+
+            return module_disparity
+
+        if len(inputs) == 3:
+            inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
         else:
-            # No previous disparity exits, so use right image instead of warped left
-            warped_left = right
+            inputs = [tf.keras.layers.Input(shape=inputs[0].shape[1:]), tf.keras.layers.Input(shape=inputs[1].shape[1:])]
+        output = internal_fn(inputs)
+        #output = tf.keras.layers.Lambda(internal_fn)(inputs)
 
-        costs = cost_volume(left, warped_left, search_range)
 
-        # Get the disparity using cost volume between left and warped left images
-        module_disparity = stereo_estimator(costs)
+        module_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
+        module_model.shape = output.shape
+        return module_model
 
-        return module_disparity
     return _block
 
 
@@ -334,7 +384,7 @@ M3 = ModuleM(name="M3", layer="3", search_range=search_range, batch_size=batch_s
 ############################SCALE 2###################################
 M2 = ModuleM(name="M2", layer="2", search_range=search_range, batch_size=batch_size)
 ############################REFINEMENT################################
-refinement_module = StereoContextNetwork(batch_size=batch_size)
+refinement_module = StereoContextNetwork(batch_size=batch_size, output_height=height, output_width=width)
 
 
 # Build the model
@@ -385,18 +435,18 @@ right_F6 = right_conv12(right_pyramid)
 
 
 #############################SCALE 6#################################
-D6 = M6(left_F6, right_F6)     
+D6 = M6([left_F6, right_F6])
 ############################SCALE 5###################################
-D5 = M5(left_F5, right_F5, D6)    
+D5 = M5([left_F5, right_F5, D6])
 ############################SCALE 4###################################
-D4 = M4(left_F4, right_F4, D5) 
+D4 = M4([left_F4, right_F4, D5])
 ############################SCALE 3###################################
-D3 = M3(left_F3, right_F3, D4)
+D3 = M3([left_F3, right_F3, D4])
 ############################SCALE 2###################################
-D2 = M2(left_F2, right_F2, D3,) 
+D2 = M2([left_F2, right_F2, D3])
 ############################REFINEMENT################################
-final_disparity = refinement_module(left_F2, D2, left_input, right_input) 
+final_disparity = refinement_module([left_F2, D2])
 
 
 model = tf.keras.Model(inputs={"left_input": left_input, "right_input": right_input}, outputs=final_disparity, name="MADNet")
-
+model.summary()

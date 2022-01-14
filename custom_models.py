@@ -339,7 +339,10 @@ class ModuleM(tf.keras.Model):
         costs = self.cost_volume(left, warped_left, self.search_range)
 
         # Get the disparity using cost volume between left and warped left images
-        self.module_disparity = self.stereo_estimator(costs)
+        if prev_disp is not None:
+            self.module_disparity = self.stereo_estimator(costs, upsampled_disp)
+        else:
+            self.module_disparity = self.stereo_estimator(costs)
 
         return self.module_disparity
 
