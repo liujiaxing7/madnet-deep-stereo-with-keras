@@ -739,18 +739,19 @@ class MADNet(tf.keras.Model):
                 num_replicas = 1
             global_batch_size = self.batch_size * num_replicas
 
-            self.M6.loss *= (1. / global_batch_size)
-            self.M5.loss *= (1. / global_batch_size)
-            self.M4.loss *= (1. / global_batch_size)
-            self.M3.loss *= (1. / global_batch_size)
-            self.M2.loss *= (1. / global_batch_size)
-            self.refinement_module.loss *= (1. / global_batch_size)  
-            if self.use_full_res_loss:
-                self.M6.loss = self.refinement_module.loss
-                self.M5.loss = self.refinement_module.loss
-                self.M4.loss = self.refinement_module.loss
-                self.M3.loss = self.refinement_module.loss
-                self.M2.loss = self.refinement_module.loss
+            if self.M6.loss is not None:
+                self.M6.loss *= (1. / global_batch_size)
+                self.M5.loss *= (1. / global_batch_size)
+                self.M4.loss *= (1. / global_batch_size)
+                self.M3.loss *= (1. / global_batch_size)
+                self.M2.loss *= (1. / global_batch_size)
+                self.refinement_module.loss *= (1. / global_batch_size)  
+                if self.use_full_res_loss:
+                    self.M6.loss = self.refinement_module.loss
+                    self.M5.loss = self.refinement_module.loss
+                    self.M4.loss = self.refinement_module.loss
+                    self.M3.loss = self.refinement_module.loss
+                    self.M2.loss = self.refinement_module.loss
         #((((((((((((((((((((((((Select module/s for adaptation))))))))))))))))))))))))
         losses = [
                 self.M6.loss, 

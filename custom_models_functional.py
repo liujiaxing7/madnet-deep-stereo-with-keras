@@ -60,13 +60,14 @@ def StereoCostVolume(name="cost_volume", search_range=2):
 
             return cost_curve
 
-        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
-        output = internal_fn(inputs)
-
-        cost_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        cost_model.shape = output.shape
-
-        return cost_model
+        # keras_inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        # keras_output = internal_fn(inputs)
+        #
+        # cost_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # cost_model.shape = keras_output.shape
+        #
+        # return cost_model(inputs)
+        return internal_fn(inputs)
 
     return _block
 
@@ -101,13 +102,15 @@ def BuildIndices(name="build_indices", batch_size=1):
             output = tf.concat([batches_coords, pixel_coords + coords], -1)
             return output
 
-        inputs = tf.keras.layers.Input(shape=coords.shape[1:])
-        output = internal_fn(inputs)
+        # keras_inputs = tf.keras.layers.Input(shape=coords.shape[1:])
+        # keras_output = internal_fn(keras_inputs)
+        #
+        # indices_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # indices_model.shape = keras_output.shape
+        #
+        # return indices_model(coords)
+        return internal_fn(coords)
 
-        indices_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        indices_model.shape = output.shape
-
-        return indices_model
     return _block
 
 
@@ -161,13 +164,14 @@ def Warp(name="warp"):
             ])
             return output
 
-        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
-        output = internal_fn(inputs)
-
-        warp_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        warp_model.shape = output.shape
-
-        return warp_model
+        # keras_inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        # keras_output = internal_fn(keras_inputs)
+        #
+        # warp_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # warp_model.shape = keras_output.shape
+        #
+        # return warp_model(inputs)
+        return internal_fn(inputs)
 
     return _block
 
@@ -214,12 +218,13 @@ def StereoContextNetwork(name="residual_refinement_network", batch_size=1, outpu
 
             return final_disparity
 
-        inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
-        output = internal_fn(inputs)
-
-        refinement_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        refinement_model.shape = output.shape
-        return refinement_model
+        # keras_inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        # keras_output = internal_fn(keras_inputs)
+        #
+        # refinement_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # refinement_model.shape = keras_output.shape
+        # return refinement_model(inputs)
+        return internal_fn(inputs)
 
     return _block
 
@@ -259,16 +264,17 @@ def StereoEstimator(name="volume_filtering"):
             x = disp6(x)
             return x
 
-        if type(inputs) is list:
-            inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
-        else:
-            inputs = tf.keras.layers.Input(shape=inputs.shape[1:])
-
-        output = internal_fn(inputs)
-
-        estimator_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        estimator_model.shape = output.shape
-        return estimator_model
+        # if type(inputs) is list:
+        #     keras_inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        # else:
+        #     keras_inputs = tf.keras.layers.Input(shape=inputs.shape[1:])
+        #
+        # keras_output = internal_fn(keras_inputs)
+        #
+        # estimator_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # estimator_model.shape = keras_output.shape
+        # return estimator_model(inputs)
+        return internal_fn(inputs)
 
     return _block
 
@@ -308,17 +314,16 @@ def ModuleM(name, layer, search_range=2, batch_size=1):
 
             return module_disparity
 
-        if len(inputs) == 3:
-            inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
-        else:
-            inputs = [tf.keras.layers.Input(shape=inputs[0].shape[1:]), tf.keras.layers.Input(shape=inputs[1].shape[1:])]
-        output = internal_fn(inputs)
-        #output = tf.keras.layers.Lambda(internal_fn)(inputs)
-
-
-        module_model = tf.keras.Model(inputs=inputs, outputs=output, name=name)
-        module_model.shape = output.shape
-        return module_model
+        # if len(inputs) == 3:
+        #     keras_inputs = [tf.keras.layers.Input(shape=input.shape[1:]) for input in inputs]
+        # else:
+        #     keras_inputs = [tf.keras.layers.Input(shape=inputs[0].shape[1:]), tf.keras.layers.Input(shape=inputs[1].shape[1:])]
+        # keras_output = internal_fn(keras_inputs)
+        #
+        # module_model = tf.keras.Model(inputs=keras_inputs, outputs=keras_output, name=name)
+        # module_model.shape = keras_output.shape
+        # return module_model(inputs)
+        return internal_fn(inputs)
 
     return _block
 

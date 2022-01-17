@@ -88,7 +88,7 @@ def main(args):
         shuffle=shuffle,
         disp_dir=train_disp_dir
         ) 
-    train_ds = train_dataset()
+    train_ds = train_dataset().repeat()
     # Get validation data
     val_ds = None
     if val_left_dir is not None and val_right_dir is not None and val_disp_dir is not None:
@@ -101,7 +101,7 @@ def main(args):
             shuffle=shuffle,
             disp_dir=val_disp_dir
             ) 
-        val_ds = val_dataset()
+        val_ds = val_dataset().repeat()
     
     # Create callbacks
     def scheduler(epoch, lr):
@@ -136,7 +136,7 @@ def main(args):
     model.use_full_res_loss = use_full_res_loss
     # Fit the model
     history = model.fit(
-        x=train_ds.repeat(),
+        x=train_ds,
         epochs=num_epochs,
         verbose=1,
         steps_per_epoch=epoch_steps,
@@ -145,7 +145,7 @@ def main(args):
             save_callback,
             schedule_callback
         ],
-        validation_data=val_ds.repeat(),
+        validation_data=val_ds,
         validation_steps=eval_steps,
         validation_freq=epoch_evals # number epoch evaluations 
     )
