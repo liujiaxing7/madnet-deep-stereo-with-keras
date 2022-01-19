@@ -17,11 +17,10 @@ def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
     
     Returns a 3D tensor of shape [batch_size,height, width,3].
     """
-    # Uncomment the code below if disparity isnt normalised already
-    # # normalize
-    # vmin = tf.reduce_min(value) if vmin is None else vmin
-    # vmax = tf.reduce_max(value) if vmax is None else vmax
-    # value = (value - vmin) / (vmax - vmin) # vmin..vmax
+    # normalize
+    vmin = tf.reduce_min(value) if vmin is None else vmin
+    vmax = tf.reduce_max(value) if vmax is None else vmax
+    value = (value - vmin) / (vmax - vmin) # vmin..vmax
 
     # quantize
     indices = tf.cast(tf.round(value[:,:,:,0]*255), dtype=tf.int32)

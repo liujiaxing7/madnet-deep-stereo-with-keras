@@ -124,8 +124,6 @@ class StereoDatasetCreator():
 
         # Set inf values to 0 (0 is infinitely far away, so basically the same)
         disp_map[disp_map==np.inf] = 0
-        # Normalize
-        disp_map = disp_map/256.0
         # convert values to positive
         if disp_map.mean() < 0:
             disp_map *= -1

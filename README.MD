@@ -1,7 +1,7 @@
-# Real-Time Self-Adaptive Deep Stereo
-💡 **UPDATE!** Code for [Continual Adaptation for Deep Stereo](https://arxiv.org/pdf/2007.05233.pdf), accepted to **TPAMI**, is now available! Details under the 💡 **UPDATE!** tags
+# TensorFlow 2 / Keras Implementation of MADNet
+## Introduction
+This code is an implementation of MADNet in TensorFlow 2 / Keras. The original implementation in TensorFlow 1 can be found here: [Original TensorFlow 1 Code](https://github.com/CVLAB-Unibo/Real-time-self-adaptive-deep-stereo). I won't offer any gaurantee that this model will perform the same as the original model in terms of speed, performance or any other metric. That being said I hope this code will prove to be valuable to other TensorFlow 2 users. The research paper for this model can be found here: [Real-time self-adaptive deep stereo](https://arxiv.org/abs/1810.05424). This code currently doesn't include the MAD++ adaptation method shown this paper: [Continual Adaptation for Deep Stereo](https://arxiv.org/pdf/2007.05233.pdf). However, the MAD adaption method is available with some limitations detailed below.
 
-Code for [Real-time self-adaptive deep stereo](https://arxiv.org/abs/1810.05424), accepted as **ORAL** at **CVPR 2019**.
 
 | [CVPR paper](https://arxiv.org/abs/1810.05424) | [CVPR video](https://www.youtube.com/watch?v=7SjyzDxmCY4) | [CVPR_Live_Demo](https://www.youtube.com/watch?v=4O-7OzVYAeU) |
 
@@ -35,78 +35,92 @@ If you use this code please cite:
 ```
 
 ## Requirements
-This software has been tested with python3 and tensorflow 1.10. All required packages can be installed using pip and requirements.txt
+This software has been tested with python3 and tensorflow 2.7. All required packages can be installed using pip and requirements.txt
 
 ```
 pip3 install -r requirements.txt
 ```
 
 ## Pretrained Weights for Network
-Pretrained weights for both DispNet and MADNet available [here](https://drive.google.com/open?id=1GwGxBOFx-NlUo9RAUgPlgPvaHCpGedlm).
+TF1 pretrained weights for both DispNet and MADNet available [here](https://drive.google.com/open?id=1GwGxBOFx-NlUo9RAUgPlgPvaHCpGedlm). TF2 pretrained weights are not available yet.
 
-## Online Adaptation Step by step on Video Sequences
+## Data Preparation
+For the training and inferencing scripts to function the data needs to be prepared in the following way. For supervised training the left rectified, right rectified and groundtruth is needed, optionally validation rectified left, rectified right and groundtruth can also be used during supervised training. Each file needs to be placed in its own folder with the same name. For unsupervised training / inferencing the same method is used but only left and right images are needed. If you would like to load the images using a different method (like from a CSV file) you can update the StereoDatasetCreator class with your own code in the preprocessing.py script.   
 
-1. Create a csv file for your video sequence similar to `example_list.csv`. 
-   
-    Each row should contain absolute paths to the input data in the following order:
-
-    "*path_to_left_rgb*,*path_to_right_rgb*,*path_to_groundtruth*"
-
-    Ground truth data will only be used to compute the network performance not for the online adaptation.
+## MADNet Training
+Two training options are available, supervised training (with groundtruth disparity) and unsupervised training (no groundtruth disparity). Its recommended to either use pretrained weights (not available yet) or perform supervised training on the model before performing unsupervised training on your dataset. Alternatively fine-tuning on the model can be performed while inferencing. Examples for both training methods are listed below:
+1. Supervised Training
+   ```bash
+   python3 Train.py \
+   --train_left_dir /path/to/left/train_images \
+   --train_right_dir /path/to/right/train_images \
+   --train_disp_dir /path/to/right/train_images \
+   -o /path/to/output/trained_model \
+   --height 320 \
+   --width 1216 \
+   --batch_size 1 \
+   --num_epochs 500 \
+   --epoch_steps 1000 \
+   --save_freq 1000
     
-    💡 **UPDATE!** To run the TPAMI code, the csv file should contain absolute path to proxy disparities as well:
+   {OPTIONAL}
+   --val_left_dir /path/to/left/val_images \
+   --val_right_dir /path/to/right/val_images \
+   --val_disp_dir /path/to/right/val_images \
+   --checkpoint_path /path/to/pretrained/model 
+   ```
+2. Un-Supervised Training
+   ```bash
+   python3 Train.py \
+   --train_left_dir /path/to/left/train_images \
+   --train_right_dir /path/to/right/train_images \
+   -o /path/to/output/trained_model \
+   --height 320 \
+   --width 1216 \
+   --batch_size 1 \
+   --num_epochs 500 \
+   --epoch_steps 1000 \
+   --save_freq 1000
     
-    "*path_to_left_rgb*,*path_to_right_rgb*,*path_to_groundtruth*,*path_to_proxies*"
+   {OPTIONAL}
+   --checkpoint_path /path/to/pretrained/model
+   ```
+## Inferencing / Online Adaptation
+Once you have trained your model or downloaded a pretrained model you can perform inferencing. Inferencing can be performed using full MAD (adapt all modules), MAD (adapt 1-5 modules), or inferencing only. Examples of performing these three options are shown below:
 
-2. Download pretrained network from [here](https://drive.google.com/open?id=1GwGxBOFx-NlUo9RAUgPlgPvaHCpGedlm).
-3. Perform different kinds of online adaptation with `Stereo_Online_Adaptation.py`, to list all available options use  `python3 Stereo_Online_Adaptation.py -h`. 
+1. Full MAD
+   ```bash
+   python3 inferencing.py \
+   --left_dir /path/to/left/rectified_images \
+   --right_dir /path/to/right/rectified_images \
+   --mad_pred \
+   --num_adapt 6 \
+   -o /path/to/save/adapted_model \
+   --checkpoint_path /path/to/pretrained/model \
+   --height 320 \
+   --width 1216 
+   ```
+2. MAD
+   ```bash
+   python3 inferencing.py \
+   --left_dir /path/to/left/rectified_images \
+   --right_dir /path/to/right/rectified_images \
+   --mad_pred \
+   --num_adapt 1 \
+   -o /path/to/save/adapted_model \
+   --checkpoint_path /path/to/pretrained/model \
+   --height 320 \
+   --width 1216      
+   ```
+2. Inferencing Only
+   ```bash
+   python3 inferencing.py \
+   --left_dir /path/to/left/rectified_images \
+   --right_dir /path/to/right/rectified_images \
+   --checkpoint_path /path/to/pretrained/model \
+   --height 320 \
+   --width 1216      
+   ```
 
-Example of online adaptation using MADNet and MAD:
-```bash
-LIST="path/to/the/list/of/frames/" #the one described at step (1)
-OUTPUT="path/to/output/folder"
-WEIGHTS="path/to/pretrained/network"
-MODELNAME="MADNet"
-BLOCKCONFIG="block_config/MadNet_full.json"
-
-python3 Stereo_Online_Adaptation.py \
-    -l ${LIST} \
-    -o ${OUTPUT} \
-    --weights ${WEIGHTS} \
-    --modelName MADNet \
-    --blockConfig ${BLOCKCONFIG} \
-    --mode MAD \
-    --sampleMode PROBABILITY \
-    --logDispStep 1
-```
-💡 **UPDATE!** To run the TPAMI code, just use the `Stereo_Continual_Adaptation.py` script instead
-
-Additional details on available parameters:
-
-+ **--modelName**: choose which disparity inference model to use, currently supports either "DispNet" or "MADNet"
-+ **--mode**: how to perform online adaptation: NONE (no online adaptation only inference), FULL (adaptation by full online backprop), MAD (adaptation by partial backprop using MAD)
-+ **--blockConfig**: path to a json file that specify how to subdivide the network into independent blocks for adaptation using MAD, some example are provided inside the `block_config` folder. Each innermost array inside the json file should correspond to layers belonging to the same independent group.
-+ **--sampleMode**: specify how to sample portions of the network to train when using MAD. 
-+ **--weights**: path to the initial weights for the network, e.g., referring to the weights linked above and assuming of having extracted the zip file in the same folder as the python script, to load MADNet trained on synthetic data use `--weights MADNet/synthetic/weights.ckpt`
-+ **--logDispStep**: save the disparity predicted every this number of steps.
-
-
-## Live inference and adaptation demo
-The Demo sub-folder contains python code to run stereo online inference and/or adaptation from a webcam stream. Before running the demo you should implement in `Demo/grabber.py` a class that extends `ImageGrabber` and is tagged with the `@register_camera_to_factory()` decorator. The class should handle connection and disconnection from your stereo camera as well as all the op necessary to read/decode and rectify stereo frames. The file `grabber.py` contains: a commented `SmattCam` class  with an implementation for a custom stereo camera implemented on an FPGA and a `ZEDMini` class to connect to a ZED stereo camera.
-
-Once you have implemented the code to connect to your camera you should be able to run the demo using the `Demo/Live_Adaptation_Demo.py` script. The script accepts a bunch of parameters from the command line to, all the options can be listed using
-
-```python
-python Live_Detection_Demo.py -h
-```
-
-Once started the script spawn two threads, one to read frames from the camera the others to process them through a stereo CNN. To stop execution just press something followed by `enter` on the shell where `Live_Detection_Demo.py` is running.
-
-## Native Correlation layers
-
-All the test in the paper were conducted using correlation layers implemented in pure tensorflow operations, however we provide also a native CUDA version of the same layer that might be usefull for deployment on memory constrained devices. To use the native correlation layer:
-1. `cd Nets/Native`
-2. `make`
-3. `cd ..`
-4. `vim sharedLayers.py`
-5. Comment line 6, uncomment line from 12 to 19
+## Current limitations
+The training and inferencing is not graph executable, so needs to have eager_mode = True. The model does also not support exporting to TensorFlow saved_model.pb or keras .h5 because it is a subclassed model. Exporting to tflite is also not possible due to not being graph compatable. I'm working on making a slimed down version of the model using the Keras Functional API, which might be able to support some of these features.
