@@ -33,119 +33,147 @@ def colorize_img(value, vmin=None, vmax=None, cmap='jet'):
 
 
 # https://github.com/philferriere/tfoptflow/blob/bdc7a72e78008d1cd6db46e4667dffc2bab1fe9e/tfoptflow/core_costvol.py
-def StereoCostVolume(name="cost_volume", search_range=2):
+def _cost_volume_block(c1, warp, search_range=2):
     """Build cost volume for associating a pixel from the left image with its corresponding pixels in the right image.
     Args:
         c1: Level of the feature pyramid of the left image
         warp: Warped level of the feature pyramid of the right image
         search_range: Search range (maximum displacement)
     """
-    def _block(inputs):
-        c1, warp = inputs
-        padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
-        width = c1.shape[2]
-        max_offset = search_range * 2 + 1
+    padded_lvl = tf.pad(warp, [[0, 0], [0, 0], [search_range, search_range], [0, 0]])
+    width = c1.shape[2]
+    max_offset = search_range * 2 + 1
 
-        cost_vol = []
-        for i in range(0, max_offset):
-            slice = padded_lvl[:, :, i:width+i, :]
-            cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
-            cost_vol.append(cost)
+    cost_vol = []
+    for i in range(0, max_offset):
+        slice = padded_lvl[:, :, i:width+i, :]
+        cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
+        cost_vol.append(cost)
 
-        cost_vol = tf.concat(cost_vol, axis=3)
-        cost_curve = tf.concat([c1, cost_vol], axis=3)
+    cost_vol = tf.concat(cost_vol, axis=3)
+    cost_curve = tf.concat([c1, cost_vol], axis=3)
 
-        return cost_curve
-
-    return _block
+    return cost_curve
 
 
-def BuildIndices(name="build_indices", batch_size=1):
+def bilinear_sampler(imgs, coords):
     """
-    Given a flow or disparity generate the coordinates
-    of source pixels to sample from [batch, height_t, width_t, 2]
+    Construct a new image by bilinear sampling from the input image.
+    Points falling outside the source image boundary have value 0.
     Args:
-        coords: Generic optical flow or disparity
+        imgs: source image to be sampled from [batch, height_s, width_s, channels]
+        coords: coordinates of source pixels to sample from [batch, height_t,width_t, 2]. height_t/width_t correspond to
+                the dimensions of the output image (don't need to be the same as height_s/width_s). The two channels
+                correspond to x and y coordinates respectively.
     Returns:
-        coordinates to sample from.
-
+        A new sampled image [batch, height_t, width_t, channels]
     """
-    def _block(coords):
 
-        batch, height, width, _ = coords.shape
-        tf.print(f"batch_size is: {batch}")
+    def _repeat(x, n_repeats):
+        rep = tf.transpose(
+            tf.expand_dims(tf.ones(shape=tf.stack([
+                n_repeats,
+            ])), 1), [1, 0])
+        rep = tf.cast(rep, 'float32')
+        x = tf.matmul(tf.reshape(x, (-1, 1)), rep)
+        return tf.reshape(x, [-1])
 
-        pixel_coords = np.ones((1, height, width, 2), dtype=np.float32)
-        batches_coords = np.ones((batch_size, height, width, 1), dtype=np.float32)
+    coords_x, coords_y = tf.split(coords, [1, 1], axis=3)
+    inp_size = tf.shape(imgs)
+    #inp_size = imgs.shape
+    coord_size = tf.shape(coords)
+    #coord_size = coords.shape
+    out_size = [coord_size[0], coord_size[1], coord_size[2], inp_size[3]]
 
-        for i in range(0, batch_size):
-            batches_coords[i][:][:][:] = i
+    coords_x = tf.cast(coords_x, 'float32')
+    coords_y = tf.cast(coords_y, 'float32')
+
+    x0 = tf.floor(coords_x)
+    x1 = x0 + 1
+    y0 = tf.floor(coords_y)
+    y1 = y0 + 1
+
+    y_max = tf.cast(inp_size[1] - 1, 'float32')
+    x_max = tf.cast(inp_size[2] - 1, 'float32')
+    zero = tf.zeros([1], dtype='float32')
+
+    wt_x0 = x1 - coords_x
+    wt_x1 = coords_x - x0
+    wt_y0 = y1 - coords_y
+    wt_y1 = coords_y - y0
+
+    x0_safe = tf.clip_by_value(x0, zero[0], x_max)
+    y0_safe = tf.clip_by_value(y0, zero[0], y_max)
+    x1_safe = tf.clip_by_value(x1, zero[0], x_max)
+    y1_safe = tf.clip_by_value(y1, zero[0], y_max)
+
+    ## indices in the flat image to sample from
+    dim2 = tf.cast(inp_size[2], 'float32')
+    dim1 = tf.cast(inp_size[2] * inp_size[1], 'float32')
+    base = tf.reshape(_repeat(tf.cast(tf.range(coord_size[0]), 'float32') * dim1, coord_size[1] * coord_size[2]),
+                      [out_size[0], out_size[1], out_size[2], 1])
+
+    base_y0 = base + y0_safe * dim2
+    base_y1 = base + y1_safe * dim2
+    idx00 = x0_safe + base_y0
+    idx01 = x0_safe + base_y1
+    idx10 = x1_safe + base_y0
+    idx11 = x1_safe + base_y1
+
+    ## sample from imgs
+    imgs_flat = tf.reshape(imgs, [-1, inp_size[3]])
+    imgs_flat = tf.cast(imgs_flat, 'float32')
+    im00 = tf.reshape(tf.gather(imgs_flat, tf.cast(idx00, 'int32')), out_size)
+    im01 = tf.reshape(tf.gather(imgs_flat, tf.cast(idx01, 'int32')), out_size)
+    im10 = tf.reshape(tf.gather(imgs_flat, tf.cast(idx10, 'int32')), out_size)
+    im11 = tf.reshape(tf.gather(imgs_flat, tf.cast(idx11, 'int32')), out_size)
+
+    w00 = wt_x0 * wt_y0
+    w01 = wt_x0 * wt_y1
+    w10 = wt_x1 * wt_y0
+    w11 = wt_x1 * wt_y1
+
+    output = tf.add_n([
+        w00 * im00, w01 * im01,
+        w10 * im10, w11 * im11
+    ])
+
+    return output
+
+
+def _warp_image_block(img, flow):
+    """
+    Given an image and a flow generate the warped image, for stereo img is the right image, flow is the disparity alligned with left
+    img: image that needs to be warped
+    flow: Generic optical flow or disparity
+    """
+
+    def build_coords(immy):
+        max_height = 2048
+        max_width = 2048
+        pixel_coords = np.ones((1, max_height, max_width, 2))
+
         # build pixel coordinates and their disparity
-        for i in range(0, height):
-            for j in range(0, width):
+        for i in range(0, max_height):
+            for j in range(0, max_width):
                 pixel_coords[0][i][j][0] = j
                 pixel_coords[0][i][j][1] = i
 
         pixel_coords = tf.constant(pixel_coords, tf.float32)
-        output = tf.concat([batches_coords, pixel_coords + coords], -1)
+        real_height = tf.shape(immy)[1]
+        real_width = tf.shape(immy)[2]
+        real_pixel_coord = pixel_coords[:, 0:real_height, 0:real_width, :]
+        immy = tf.concat([immy, tf.zeros_like(immy)], axis=-1)
+        output = real_pixel_coord - immy
+
         return output
 
-    return _block
+    coords = build_coords(flow)
+    warped = bilinear_sampler(img, coords)
+    return warped
 
 
-def Warp(name="warp"):
-    """
-    Construct a new image by bilinear sampling from the input image.
-    The right image is warpt into the lefts position.
-    Points falling outside the source image boundary have value 0.
-    Args:
-        imgs: source right images to be sampled from [batch, height_s, width_s, channels]
-        coords: coordinates of source pixels to sample from [batch, height_t, width_t, 2]. 
-            height_t/width_t correspond to the dimensions of the outputimage (don't need to be the same as height_s/width_s). 
-            The two channels correspond to x and y coordinates respectively.
-    Returns:
-        A new sampled image [batch, height_t, width_t, channels],
-        which ideally is very similar to the left image
-    """
-
-    def _block(inputs):
-        imgs, coords = inputs
-        coord_b, coords_x, coords_y = tf.split(coords, [1, 1, 1], axis=3)
-
-        coords_x = tf.cast(coords_x, 'float32')
-        coords_y = tf.cast(coords_y, 'float32')
-
-        x0 = tf.floor(coords_x)
-        x1 = x0 + 1
-        y0 = tf.floor(coords_y)
-
-        y_max = tf.cast(tf.shape(imgs)[1] - 1, 'float32')
-        x_max = tf.cast(tf.shape(imgs)[2] - 1, 'float32')
-        zero = tf.zeros([1],dtype=tf.float32)
-
-        x0_safe = tf.clip_by_value(x0, zero[0], x_max)
-        y0_safe = tf.clip_by_value(y0, zero[0], y_max)
-        x1_safe = tf.clip_by_value(x1, zero[0], x_max)
-
-        # bilinear interp weights, with points outside the grid having weight 0
-        wt_x0 = (x1 - coords_x) * tf.cast(tf.equal(x0, x0_safe), 'float32')
-        wt_x1 = (coords_x - x0) * tf.cast(tf.equal(x1, x1_safe), 'float32')
-
-
-        im00 = tf.cast(tf.gather_nd(imgs, tf.cast(
-            tf.concat([coord_b, y0_safe, x0_safe], -1), 'int32')), 'float32')
-        im01 = tf.cast(tf.gather_nd(imgs, tf.cast(
-            tf.concat([coord_b, y0_safe, x1_safe], -1), 'int32')), 'float32')
-
-        output = tf.add_n([
-            wt_x0 * im00, wt_x1 * im01
-        ])
-        return output
-
-    return _block
-
-
-def StereoContextNetwork(name="residual_refinement_network", batch_size=1, output_height=320, output_width=1216):
+def _refinement_block(input, disp, output_height, output_width):
     """
     Final Layer in MADNet.
     Calculates the reprojection loss if training=True.
@@ -166,27 +194,21 @@ def StereoContextNetwork(name="residual_refinement_network", batch_size=1, outpu
     context6 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), dilation_rate=1, padding="same", activation=act, use_bias=True, name="context6")
     context7 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), dilation_rate=1, padding="same", activation="linear", use_bias=True, name="context7")
 
-    def _block(inputs):
-        input, disp = inputs
-        volume = tf.keras.layers.concatenate([input, disp], axis=-1)
+    volume = tf.keras.layers.concatenate([input, disp], axis=-1)
+    x = context1(volume)
+    x = context2(x)
+    x = context3(x)
+    x = context4(x)
+    x = context5(x)
+    x = context6(x)
+    x = context7(x)
 
-        x = context1(volume)
-        x = context2(x)
-        x = context3(x)
-        x = context4(x)
-        x = context5(x)
-        x = context6(x)
-        x = context7(x)
-
-        context_disp = tf.keras.layers.add([disp, x])
-        #final_disparity = tf.keras.layers.Resizing(name="final_disparity", height=output_height, width=output_width, interpolation='bilinear')(context_disp)
-        final_disparity = tf.image.resize(images=context_disp, name="final_disparity", size=(output_height, output_width), method='bilinear')
-        return final_disparity
-
-    return _block
+    context_disp = tf.keras.layers.add([disp, x])
+    final_disparity = tf.image.resize(images=context_disp, name="final_disparity", size=(output_height, output_width), method='bilinear')
+    return final_disparity
 
 
-def StereoEstimator(name="volume_filtering"):
+def _stereo_estimator_block(name, costs, upsampled_disp=None):
     """
     This is the stereo estimation network at resolution n.
     It uses the costs (from the pixel difference between the warped right image 
@@ -203,32 +225,25 @@ def StereoEstimator(name="volume_filtering"):
     disp5 = tf.keras.layers.Conv2D(filters=32, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name=f"{name}_disp5")
     disp6 = tf.keras.layers.Conv2D(filters=1, kernel_size=(3,3), strides=1, padding="same", activation="linear", use_bias=True, name=f"{name}_disp6")
 
-    def _block(inputs):
-        if type(inputs) is list:
-            costs, upsampled_disp = inputs
-            volume = tf.keras.layers.concatenate([costs, upsampled_disp], axis=-1)
-        else:
-            volume = inputs
+    if upsampled_disp is not None:
+        volume = tf.keras.layers.concatenate([costs, upsampled_disp], axis=-1)
+    else:
+        volume = costs
 
-        x = disp1(volume)
-        x = disp2(x)
-        x = disp3(x)
-        x = disp4(x)
-        x = disp5(x)
-        x = disp6(x)
-        return x
+    x = disp1(volume)
+    x = disp2(x)
+    x = disp3(x)
+    x = disp4(x)
+    x = disp5(x)
+    x = disp6(x)
+    return x
 
-    return _block
 
-def ModuleM(name, layer, search_range=2, batch_size=1):
+def ModuleM(layer, search_range=2):
     """
     Module MX is a sub-module of MADNet, which can be trained individually for 
     online adaptation using the MAD (Modular ADaptaion) method.
     """
-    cost_volume = StereoCostVolume(name=f"cost_{layer}", search_range=search_range)
-    stereo_estimator = StereoEstimator(name=f"volume_filtering_{layer}")
-    build_indices = BuildIndices(name=f"build_indices_{layer}", batch_size=batch_size)
-    warp = Warp(name=f"warp_{layer}")
 
     def _block(inputs):
         # Check if layer is the bottom of the pyramid
@@ -236,24 +251,21 @@ def ModuleM(name, layer, search_range=2, batch_size=1):
             left, right, prev_disp = inputs
             mod_height, mod_width = left.shape[1], left.shape[2]
             # Upsample disparity from previous layer
-            #upsampled_disp = tf.keras.layers.Resizing(name=f"upsampled_disp_{layer}", height=height, width=width, interpolation='bilinear')(prev_disp)
             upsampled_disp = tf.image.resize(images=prev_disp, name=f"upsampled_disp_{layer}", size=(mod_height, mod_width), method='bilinear')
-            coords = tf.keras.layers.concatenate([upsampled_disp, tf.zeros_like(upsampled_disp)], -1)
-            indices = build_indices(coords)
             # Warp the right image into the left using upsampled disparity
-            warped_left = warp([right, indices])
+            warped_left = _warp_image_block(right, upsampled_disp)
         else:
             left, right = inputs
             # No previous disparity exits, so use right image instead of warped left
             warped_left = right
 
-        costs = cost_volume([left, warped_left])
+        costs = _cost_volume_block(left, warped_left, search_range)
 
         # Get the disparity using cost volume between left and warped left images
         if len(inputs) == 3:
-            module_disparity = stereo_estimator([costs, upsampled_disp])
+            module_disparity = _stereo_estimator_block(f"volume_filtering_{layer}", costs, upsampled_disp)
         else:
-            module_disparity = stereo_estimator(costs)
+            module_disparity = _stereo_estimator_block(f"volume_filtering_{layer}", costs)
 
         return module_disparity
 
@@ -311,17 +323,17 @@ right_conv11 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=2,
 right_conv12 = tf.keras.layers.Conv2D(filters=192, kernel_size=(3,3), strides=1, padding="same", activation=act, use_bias=True, name="right_conv12")
 
 #############################SCALE 6#################################
-M6 = ModuleM(name="M6", layer="6", search_range=search_range, batch_size=batch_size)
+M6 = ModuleM(layer="6", search_range=search_range)
 ############################SCALE 5###################################
-M5 = ModuleM(name="M5", layer="5", search_range=search_range, batch_size=batch_size)
+M5 = ModuleM(layer="5", search_range=search_range)
 ############################SCALE 4###################################
-M4 = ModuleM(name="M4", layer="4", search_range=search_range, batch_size=batch_size)
+M4 = ModuleM(layer="4", search_range=search_range)
 ############################SCALE 3###################################
-M3 = ModuleM(name="M3", layer="3", search_range=search_range, batch_size=batch_size)
+M3 = ModuleM(layer="3", search_range=search_range)
 ############################SCALE 2###################################
-M2 = ModuleM(name="M2", layer="2", search_range=search_range, batch_size=batch_size)
+M2 = ModuleM(layer="2", search_range=search_range)
 ############################REFINEMENT################################
-refinement_module = StereoContextNetwork(batch_size=batch_size, output_height=height, output_width=width)
+#refinement_module = StereoContextNetwork(output_height=height, output_width=width)
 
 
 # Build the model
@@ -382,7 +394,7 @@ D3 = M3([left_F3, right_F3, D4])
 ############################SCALE 2###################################
 D2 = M2([left_F2, right_F2, D3])
 ############################REFINEMENT################################
-final_disparity = refinement_module([left_F2, D2])
+final_disparity = _refinement_block(left_F2, D2, height, width)
 
 
 model = tf.keras.Model(inputs={"left_input": left_input, "right_input": right_input}, outputs=final_disparity, name="MADNet")
