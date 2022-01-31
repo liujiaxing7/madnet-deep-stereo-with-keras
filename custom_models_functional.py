@@ -1,6 +1,7 @@
-from keras import backend
 import tensorflow as tf
+from keras import backend
 from keras.utils import layer_utils
+from keras.engine import data_adapter
 from keras import layers
 import numpy as np
 from matplotlib import cm
@@ -86,9 +87,7 @@ def bilinear_sampler(imgs, coords):
 
     coords_x, coords_y = tf.split(coords, [1, 1], axis=3)
     inp_size = tf.shape(imgs)
-    #inp_size = imgs.shape
     coord_size = tf.shape(coords)
-    #coord_size = coords.shape
     out_size = [coord_size[0], coord_size[1], coord_size[2], inp_size[3]]
 
     coords_x = tf.cast(coords_x, 'float32')
@@ -318,6 +317,18 @@ def ModuleM(layer, search_range=2):
     return _block
 
 
+def _custom_train_step(self, data):
+    """
+    To be completed later
+    """
+    # Left, right image inputs and groundtruth target disparity
+    inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+    left_input = inputs["left_input"]
+    right_input = inputs["right_input"]
+    return
+
+
 def MADNet(input_shape=None,
            weights=None,
            input_tensor=None,
@@ -432,54 +443,30 @@ def MADNet(input_shape=None,
         "activation": tf.keras.layers.Activation(tf.nn.leaky_relu),
         "use_bias": True
     }
-    # Left image feature pyramid (feature extractor)
+    # Image feature pyramid (feature extractor)
     # F1
-    left_conv1 = tf.keras.layers.Conv2D(
+    conv1 = tf.keras.layers.Conv2D(
         filters=16,
         strides=2,
-        name="left_conv1",
+        name="conv1",
         input_shape=(input_shape[0], input_shape[1], input_shape[2], ),
         **layer_kwargs)
-    left_conv2 = tf.keras.layers.Conv2D(filters=16, strides=1, name="left_conv2", **layer_kwargs)
+    conv2 = tf.keras.layers.Conv2D(filters=16, strides=1, name="conv2", **layer_kwargs)
     # F2
-    left_conv3 = tf.keras.layers.Conv2D(filters=32, strides=2, name="left_conv3", **layer_kwargs)
-    left_conv4 = tf.keras.layers.Conv2D(filters=32, strides=1, name="left_conv4", **layer_kwargs)
+    conv3 = tf.keras.layers.Conv2D(filters=32, strides=2, name="conv3", **layer_kwargs)
+    conv4 = tf.keras.layers.Conv2D(filters=32, strides=1, name="conv4", **layer_kwargs)
     # F3
-    left_conv5 = tf.keras.layers.Conv2D(filters=64, strides=2, name="left_conv5", **layer_kwargs)
-    left_conv6 = tf.keras.layers.Conv2D(filters=64, strides=1, name="left_conv6", **layer_kwargs)
+    conv5 = tf.keras.layers.Conv2D(filters=64, strides=2, name="conv5", **layer_kwargs)
+    conv6 = tf.keras.layers.Conv2D(filters=64, strides=1, name="conv6", **layer_kwargs)
     # F4
-    left_conv7 = tf.keras.layers.Conv2D(filters=96, strides=2, name="left_conv7", **layer_kwargs)
-    left_conv8 = tf.keras.layers.Conv2D(filters=96, strides=1, name="left_conv8", **layer_kwargs)
+    conv7 = tf.keras.layers.Conv2D(filters=96, strides=2, name="conv7", **layer_kwargs)
+    conv8 = tf.keras.layers.Conv2D(filters=96, strides=1, name="conv8", **layer_kwargs)
     # F5
-    left_conv9 = tf.keras.layers.Conv2D(filters=128, strides=2, name="left_conv9", **layer_kwargs)
-    left_conv10 = tf.keras.layers.Conv2D(filters=128, strides=1, name="left_conv10", **layer_kwargs)
+    conv9 = tf.keras.layers.Conv2D(filters=128, strides=2, name="conv9", **layer_kwargs)
+    conv10 = tf.keras.layers.Conv2D(filters=128, strides=1, name="conv10", **layer_kwargs)
     # F6
-    left_conv11 = tf.keras.layers.Conv2D(filters=192, strides=2, name="left_conv11", **layer_kwargs)
-    left_conv12 = tf.keras.layers.Conv2D(filters=192, strides=1, name="left_conv12", **layer_kwargs)
-    # Right image feature pyramid (feature extractor)
-    # F1
-    right_conv1 = tf.keras.layers.Conv2D(
-        filters=16,
-        strides=2,
-        name="right_conv1",
-        input_shape=(input_shape[0], input_shape[1], input_shape[2], ),
-        **layer_kwargs)
-    right_conv2 = tf.keras.layers.Conv2D(filters=16, strides=1, name="right_conv2", **layer_kwargs)
-    # F2
-    right_conv3 = tf.keras.layers.Conv2D(filters=32, strides=2, name="right_conv3", **layer_kwargs)
-    right_conv4 = tf.keras.layers.Conv2D(filters=32, strides=1, name="right_conv4", **layer_kwargs)
-    # F3
-    right_conv5 = tf.keras.layers.Conv2D(filters=64, strides=2, name="right_conv5", **layer_kwargs)
-    right_conv6 = tf.keras.layers.Conv2D(filters=64, strides=1, name="right_conv6", **layer_kwargs)
-    # F4
-    right_conv7 = tf.keras.layers.Conv2D(filters=96, strides=2, name="right_conv7", **layer_kwargs)
-    right_conv8 = tf.keras.layers.Conv2D(filters=96, strides=1, name="right_conv8", **layer_kwargs)
-    # F5
-    right_conv9 = tf.keras.layers.Conv2D(filters=128, strides=2, name="right_conv9", **layer_kwargs)
-    right_conv10 = tf.keras.layers.Conv2D(filters=128, strides=1, name="right_conv10", **layer_kwargs)
-    # F6
-    right_conv11 = tf.keras.layers.Conv2D(filters=192, strides=2, name="right_conv11", **layer_kwargs)
-    right_conv12 = tf.keras.layers.Conv2D(filters=192, strides=1, name="right_conv12", **layer_kwargs)
+    conv11 = tf.keras.layers.Conv2D(filters=192, strides=2, name="conv11", **layer_kwargs)
+    conv12 = tf.keras.layers.Conv2D(filters=192, strides=1, name="conv12", **layer_kwargs)
 
     #############################SCALE 6#################################
     M6 = ModuleM(layer="6", search_range=search_range)
@@ -495,43 +482,43 @@ def MADNet(input_shape=None,
     #######################PYRAMID FEATURES###############################
     # Left image feature pyramid (feature extractor)
     # F1
-    left_pyramid = left_conv1(left_input)
-    left_F1 = left_conv2(left_pyramid)
+    left_pyramid = conv1(left_input)
+    left_F1 = conv2(left_pyramid)
     # F2
-    left_pyramid = left_conv3(left_F1)
-    left_F2 = left_conv4(left_pyramid)
+    left_pyramid = conv3(left_F1)
+    left_F2 = conv4(left_pyramid)
     # F3
-    left_pyramid = left_conv5(left_F2)
-    left_F3 = left_conv6(left_pyramid)
+    left_pyramid = conv5(left_F2)
+    left_F3 = conv6(left_pyramid)
     # F4
-    left_pyramid = left_conv7(left_F3)
-    left_F4 = left_conv8(left_pyramid)
+    left_pyramid = conv7(left_F3)
+    left_F4 = conv8(left_pyramid)
     # F5
-    left_pyramid = left_conv9(left_F4)
-    left_F5 = left_conv10(left_pyramid)
+    left_pyramid = conv9(left_F4)
+    left_F5 = conv10(left_pyramid)
     # F6
-    left_pyramid = left_conv11(left_F5)
-    left_F6 = left_conv12(left_pyramid)
+    left_pyramid = conv11(left_F5)
+    left_F6 = conv12(left_pyramid)
 
     # Right image feature pyramid (feature extractor)
     # F1
-    right_pyramid = right_conv1(right_input)
-    right_F1 = right_conv2(right_pyramid)
+    right_pyramid = conv1(right_input)
+    right_F1 = conv2(right_pyramid)
     # F2
-    right_pyramid = right_conv3(right_F1)
-    right_F2 = right_conv4(right_pyramid)
+    right_pyramid = conv3(right_F1)
+    right_F2 = conv4(right_pyramid)
     # F3
-    right_pyramid = right_conv5(right_F2)
-    right_F3 = right_conv6(right_pyramid)
+    right_pyramid = conv5(right_F2)
+    right_F3 = conv6(right_pyramid)
     # F4
-    right_pyramid = right_conv7(right_F3)
-    right_F4 = right_conv8(right_pyramid)
+    right_pyramid = conv7(right_F3)
+    right_F4 = conv8(right_pyramid)
     # F5
-    right_pyramid = right_conv9(right_F4)
-    right_F5 = right_conv10(right_pyramid)
+    right_pyramid = conv9(right_F4)
+    right_F5 = conv10(right_pyramid)
     # F6
-    right_pyramid = right_conv11(right_F5)
-    right_F6 = right_conv12(right_pyramid)
+    right_pyramid = conv11(right_F5)
+    right_F6 = conv12(right_pyramid)
 
     #############################SCALE 6#################################
     D6 = M6([left_F6, right_F6])
@@ -552,30 +539,46 @@ def MADNet(input_shape=None,
                             },
                            outputs=final_disparity,
                            name="MADNet")
+
+    # Monkey patch the train_step to use custom training
+    #model.train_step = _custom_train_step
+
     if weights is not None:
         model.load_weights(weights)
 
+
     return model
 
-height = 490
-width = 640
-search_range = 2
-batch_size = 1
-left_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
-right_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
-tensor = layers.Input(shape=(height, width, 3))
+# height = 480
+# width = 640
+# search_range = 2
+# batch_size = 1
+# left_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
+# right_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
+# tensor = layers.Input(shape=(height, width, 3))
+#
+# model = MADNet(
+#     input_shape=(height, width, 3),
+#     weights="C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/tf1_pretrained_nets/MADNet/synthetic_tf2/weights.ckpt-1.index",
+#     input_tensor=tensor
+# )
+#
+# model.summary()
+# weights = model.weights
+#
+# trainable = {weight.name: weight.shape for weight in weights}
+# print(f"trainable_weights: \n{trainable}")
+#
 
-model = MADNet(
-    input_shape=(height, width, 3),
-    input_tensor=tensor
-)
-
-model.summary()
-
-disp_pred = model({
-    "left_input": left_tensor,
-    "right_input": right_tensor
-})
-
-print(disp_pred.shape)
-
+#
+# disp_pred = model({
+#     "left_input": left_tensor,
+#     "right_input": right_tensor
+# })
+#
+# print(disp_pred.shape)
+#
+# weights_path = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/functional/weights.ckpt"
+# model.save_weights(weights_path)
+#
+# model.save("C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/functional")
