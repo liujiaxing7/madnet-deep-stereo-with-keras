@@ -51,7 +51,7 @@ For the training and inferencing scripts to function the data needs to be prepar
 Two training options are available, supervised training (with groundtruth disparity) and unsupervised training (no groundtruth disparity). Its recommended to either use pretrained weights (not available yet) or perform supervised training on the model before performing unsupervised training on your dataset. Alternatively fine-tuning on the model can be performed while inferencing. Examples for both training methods are listed below:
 1. Supervised Training
    ```bash
-   python3 Train.py \
+   python3 subclassed_train.py \
    --train_left_dir /path/to/left/train_images \
    --train_right_dir /path/to/right/train_images \
    --train_disp_dir /path/to/right/train_images \
@@ -71,7 +71,7 @@ Two training options are available, supervised training (with groundtruth dispar
    ```
 2. Un-Supervised Training
    ```bash
-   python3 Train.py \
+   python3 subclassed_train.py \
    --train_left_dir /path/to/left/train_images \
    --train_right_dir /path/to/right/train_images \
    -o /path/to/output/trained_model \
@@ -90,7 +90,7 @@ Once you have trained your model or downloaded a pretrained model you can perfor
 
 1. Full MAD
    ```bash
-   python3 inferencing.py \
+   python3 subclassed_inferencing.py \
    --left_dir /path/to/left/rectified_images \
    --right_dir /path/to/right/rectified_images \
    --mad_pred \
@@ -102,7 +102,7 @@ Once you have trained your model or downloaded a pretrained model you can perfor
    ```
 2. MAD
    ```bash
-   python3 inferencing.py \
+   python3 subclassed_inferencing.py \
    --left_dir /path/to/left/rectified_images \
    --right_dir /path/to/right/rectified_images \
    --mad_pred \
@@ -114,7 +114,7 @@ Once you have trained your model or downloaded a pretrained model you can perfor
    ```
 2. Inferencing Only
    ```bash
-   python3 inferencing.py \
+   python3 subclassed_inferencing.py \
    --left_dir /path/to/left/rectified_images \
    --right_dir /path/to/right/rectified_images \
    --checkpoint_path /path/to/pretrained/model \

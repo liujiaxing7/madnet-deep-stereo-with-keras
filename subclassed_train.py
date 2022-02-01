@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 import argparse
-from custom_models import MADNet
+from subclassed_madnet import MADNet
 from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
 
@@ -11,7 +11,7 @@ strategy = tf.distribute.MirroredStrategy()
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 
-parser=argparse.ArgumentParser(description='Script for training MADNet')
+parser=argparse.ArgumentParser(description='Script for training subclassed MADNet')
 parser.add_argument("--train_left_dir", help='path to left images folder', required=True)
 parser.add_argument("--train_right_dir", help='path to right images folder', required=True)
 parser.add_argument("--train_disp_dir", help='path to left disparity maps folder', default=None, required=False)

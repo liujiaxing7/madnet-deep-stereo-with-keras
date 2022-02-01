@@ -1,14 +1,14 @@
 import os
 import tensorflow as tf
 import argparse
-from custom_models import MADNet
+from subclassed_madnet import MADNet
 from preprocessing import StereoDatasetCreator
 import matplotlib.pyplot as plt
 from datetime import datetime
 
 print("\nTensorFlow Version: {}".format(tf.__version__))
 
-parser=argparse.ArgumentParser(description='Script for training MADNet')
+parser=argparse.ArgumentParser(description='Script for inferencing subclassed MADNet')
 parser.add_argument("--left_dir", help='path to left images folder', required=True)
 parser.add_argument("--right_dir", help='path to right images folder', required=True)
 parser.add_argument("--mad_pred", help='use modular adaptation while inferencing', action="store_true", default=False)
