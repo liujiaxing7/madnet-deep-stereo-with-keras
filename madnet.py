@@ -326,7 +326,43 @@ def _custom_train_step(self, data):
 
     left_input = inputs["left_input"]
     right_input = inputs["right_input"]
-    return
+
+    with tf.GradientTape(persistent=False) as tape:
+        # Forward pass
+        final_disparity = self(inputs={'left_input': left_input, 'right_input': right_input}, training=True)
+        # Calculate loss
+        if gt is None:
+            # Warp the right image into the left using final disparity
+            warped_left = _warp_image_block(right_input, final_disparity)
+            loss = self.compiled_loss(left_input, warped_left, sample_weight, regularization_losses=self.losses)
+        else:
+            loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
+
+
+    # Tensorboard images will display every 1000 steps
+    if self._train_counter % 1000 == 0:
+        tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'),
+                         step=self._train_counter, max_outputs=1)
+        if gt is not None:
+            tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'),
+                             step=self._train_counter, max_outputs=1)
+        tf.summary.image('03_left_image', left_input, step=self._train_counter, max_outputs=1)
+        tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
+
+    # Run backwards pass.
+    self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
+
+    return_metrics = {}
+    if gt is not None:
+        self.compiled_metrics.update_state(gt, final_disparity, sample_weight)
+        # Collect metrics to return
+        for metric in self.metrics:
+            result = metric.result()
+            if isinstance(result, dict):
+                return_metrics.update(result)
+            else:
+                return_metrics[metric.name] = result
+    return return_metrics
 
 
 def MADNet(input_shape=None,
@@ -360,7 +396,7 @@ def MADNet(input_shape=None,
     Returns:
         A `keras.Model` instance.
     """
-    if not (weights in {None} or tf.io.gfile.exists(weights)):
+    if not (weights in {None} or tf.io.gfile.exists(weights) or tf.io.gfile.exists(weights + ".index")):
         raise ValueError('The `weights` argument should be either '
                          '`None` (random initialization), '
                          'or the path to the weights file to be loaded.  '
@@ -533,6 +569,10 @@ def MADNet(input_shape=None,
     ############################REFINEMENT################################
     final_disparity = _refinement_block(left_F2, D2, input_shape)
 
+    old_train_step = tf.keras.Model.train_step
+    # Monkey patch the train_step to use custom training
+    tf.keras.Model.train_step = _custom_train_step
+
     model = tf.keras.Model(inputs={
                                 "left_input": left_input,
                                 "right_input": right_input
@@ -540,45 +580,7 @@ def MADNet(input_shape=None,
                            outputs=final_disparity,
                            name="MADNet")
 
-    # Monkey patch the train_step to use custom training
-    #model.train_step = _custom_train_step
-
     if weights is not None:
         model.load_weights(weights)
 
-
     return model
-
-# height = 480
-# width = 640
-# search_range = 2
-# batch_size = 1
-# left_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
-# right_tensor = tf.random.normal(shape=(batch_size, height, width, 3))
-# tensor = layers.Input(shape=(height, width, 3))
-#
-# model = MADNet(
-#     input_shape=(height, width, 3),
-#     weights="C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/tf1_pretrained_nets/MADNet/synthetic_tf2/weights.ckpt-1.index",
-#     input_tensor=tensor
-# )
-#
-# model.summary()
-# weights = model.weights
-#
-# trainable = {weight.name: weight.shape for weight in weights}
-# print(f"trainable_weights: \n{trainable}")
-#
-
-#
-# disp_pred = model({
-#     "left_input": left_tensor,
-#     "right_input": right_tensor
-# })
-#
-# print(disp_pred.shape)
-#
-# weights_path = "C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/functional/weights.ckpt"
-# model.save_weights(weights_path)
-#
-# model.save("C:/Users/Christian/Documents/BiglyBT Downloads/FlyingThings3D_subset/models/functional")

@@ -3,7 +3,7 @@ import tensorflow as tf
 import argparse
 from subclassed_madnet import MADNet
 from preprocessing import StereoDatasetCreator
-from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
+from subclassed_losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
 
 
 print("\nTensorFlow Version: {}".format(tf.__version__))

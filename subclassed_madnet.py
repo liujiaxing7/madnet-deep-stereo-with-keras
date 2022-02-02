@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from keras.engine import data_adapter
 from matplotlib import cm
-from losses_and_metrics import SSIMLoss, ReconstructionLoss, calculate_metrics
+from subclassed_losses_and_metrics import SSIMLoss, ReconstructionLoss, calculate_metrics
 
 
 def colorize_img(value, vmin=None, vmax=None, cmap='jet'):

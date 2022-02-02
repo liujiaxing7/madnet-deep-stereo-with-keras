@@ -92,7 +92,7 @@ class SSIMLoss(tf.keras.losses.Loss):
     """
     def __init__(self, name="mean_SSIM_l1"):
         super(SSIMLoss, self).__init__(name=name)
-        self.pool = tf.keras.layers.AveragePooling2D(pool_size=(3, 3), strides=(1, 1), padding='valid')
+        self.pool = tf.keras.layers.AveragePooling2D(pool_size=(3,3) ,strides=(1,1), padding='valid')
         self.reduction = tf.keras.losses.Reduction.SUM
 
     def call(self, y_true, y_pred):
@@ -109,7 +109,7 @@ class SSIMLoss(tf.keras.losses.Loss):
         SSIM_d = (mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2)
 
         SSIM = SSIM_n / SSIM_d
-        SSIM = tf.clip_by_value((1-SSIM)/2, 0, 1)
+        SSIM = tf.clip_by_value((1-SSIM)/2, 0 ,1)
 
         mean_SSIM = tf.reduce_mean(SSIM)
 
@@ -130,7 +130,7 @@ class ReconstructionLoss(tf.keras.losses.Loss):
     """
     def __init__(self, name="mean_l1"):
         super(ReconstructionLoss, self).__init__(name=name)
-        self.reduction = tf.keras.losses.Reduction.NONE
+        self.reduction = tf.keras.losses.Reduction.SUM
 
     def call(self, y_true, y_pred):
         return tf.reduce_sum(tf.abs(y_true-y_pred))
