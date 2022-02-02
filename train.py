@@ -3,7 +3,7 @@ import tensorflow as tf
 import argparse
 from madnet import MADNet
 from preprocessing import StereoDatasetCreator
-from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss
+from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss, SSIMLoss
 
 
 
@@ -36,9 +36,9 @@ args = parser.parse_args()
 
 
 def main(args):
-
-    run_eager = True
-
+    perform_val = False
+    if args.val_left_dir is not None and args.val_right_dir is not None and args.val_disp_dir is not None:
+        perform_val = True
     # Create output folder if it doesn't already exist
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -49,14 +49,22 @@ def main(args):
         search_range=args.search_range
     )
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
-
-    model.compile(
-        optimizer=optimizer,
-        # losses and metrics below are only needed for evaluation
-        loss=[ReconstructionLoss()],
-        metrics=[EndPointError(), Bad3()],
-        run_eagerly=run_eager
-    )
+    # If no train groundtruth is available, then the reprojection error
+    # from warping is used to calculate the loss
+    if args.train_disp_dir is None:
+        model.compile(
+            optimizer=optimizer,
+            loss=SSIMLoss(),
+            metrics=[EndPointError(), Bad3()],
+            run_eagerly=True if perform_val else False
+        )
+    else:
+        model.compile(
+            optimizer=optimizer,
+            loss=ReconstructionLoss(),
+            metrics=[EndPointError(), Bad3()],
+            run_eagerly=False
+        )
 
     # Get training data
     train_dataset = StereoDatasetCreator(
@@ -71,7 +79,7 @@ def main(args):
     train_ds = train_dataset().repeat()
     # Get validation data
     val_ds = None
-    if args.val_left_dir is not None and args.val_right_dir is not None and args.val_disp_dir is not None:
+    if perform_val:
         val_dataset = StereoDatasetCreator(
             left_dir=args.val_left_dir,
             right_dir=args.val_right_dir,
@@ -85,14 +93,14 @@ def main(args):
 
     # Create callbacks
     def scheduler(epoch, lr):
-        if epoch < 400000:
+        if epoch < 30000:
             lr = lr
-        elif epoch < 600000:
+        elif epoch < 60000:
             lr = lr * 0.5
         else:
             # learning_rate * decay_rate ^ (global_step / decay_steps)
             decay_rate = 0.5
-            lr = lr * 0.5 * decay_rate ** (epoch // 600000)
+            lr = lr * 0.5 * decay_rate ** (epoch // 60000)
         tf.summary.scalar('learning rate', data=lr, step=epoch)
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)

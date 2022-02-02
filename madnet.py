@@ -151,7 +151,7 @@ def bilinear_sampler(imgs, coords):
 def _warp_image_block(img, flow):
     """
     Given an image and a flow generate the warped image,
-    for stereo img is the right image, flow is the disparity alligned with left.
+    for stereo img is the right image, flow is the disparity aligned with left.
     img: image that needs to be warped
     flow: Generic optical flow or disparity
     """
@@ -196,7 +196,7 @@ def _refinement_block(input, disp, output_shape):
     layer_kwargs = {
         "kernel_size": (3, 3),
         "padding": "same",
-        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu),
+        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu, dtype=tf.float32, name="leaky_relu"),
         "use_bias": True
     }
     context1 = tf.keras.layers.Conv2D(filters=128, dilation_rate=1, name="context1", **layer_kwargs)
@@ -247,7 +247,7 @@ def _stereo_estimator_block(name, costs, upsampled_disp=None):
         "kernel_size": (3, 3),
         "strides": 1,
         "padding": "same",
-        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu),
+        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu, dtype=tf.float32, name="leaky_relu"),
         "use_bias": True
     }
     disp1 = tf.keras.layers.Conv2D(filters=128, name=f"{name}_disp1", **layer_kwargs)
@@ -257,7 +257,7 @@ def _stereo_estimator_block(name, costs, upsampled_disp=None):
     disp5 = tf.keras.layers.Conv2D(filters=32, name=f"{name}_disp5", **layer_kwargs)
     disp6 = tf.keras.layers.Conv2D(
         filters=1,
-        kernel_size=(3,3),
+        kernel_size=(3, 3),
         strides=1,
         padding="same",
         activation="linear",
@@ -316,7 +316,7 @@ def ModuleM(layer, search_range=2):
 
     return _block
 
-
+@tf.function
 def _custom_train_step(self, data):
     """
     To be completed later
@@ -337,7 +337,10 @@ def _custom_train_step(self, data):
             loss = self.compiled_loss(left_input, warped_left, sample_weight, regularization_losses=self.losses)
         else:
             loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
-
+        # Perform reduction on the loss
+        # Note: displayed loss will be sum of all batch losses, but backprop will use the reduced loss
+        batch_size = tf.shape(left_input)[0]
+        reduced_loss = loss / tf.cast(batch_size, dtype=tf.float32)
 
     # Tensorboard images will display every 1000 steps
     if self._train_counter % 1000 == 0:
@@ -350,18 +353,19 @@ def _custom_train_step(self, data):
         tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
 
     # Run backwards pass.
-    self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
+    self.optimizer.minimize(reduced_loss, self.trainable_variables, tape=tape)
 
     return_metrics = {}
+    self.compiled_metrics.reset_state()
     if gt is not None:
         self.compiled_metrics.update_state(gt, final_disparity, sample_weight)
-        # Collect metrics to return
-        for metric in self.metrics:
-            result = metric.result()
-            if isinstance(result, dict):
-                return_metrics.update(result)
-            else:
-                return_metrics[metric.name] = result
+    # Collect metrics to return
+    for metric in self.metrics:
+        result = metric.result()
+        if isinstance(result, dict):
+            return_metrics.update(result)
+        else:
+            return_metrics[metric.name] = result
     return return_metrics
 
 
@@ -396,7 +400,9 @@ def MADNet(input_shape=None,
     Returns:
         A `keras.Model` instance.
     """
-    if not (weights in {None} or tf.io.gfile.exists(weights) or tf.io.gfile.exists(weights + ".index")):
+    if not (weights is None or
+            tf.io.gfile.exists(weights) or
+            tf.io.gfile.exists(weights + ".index")):
         raise ValueError('The `weights` argument should be either '
                          '`None` (random initialization), '
                          'or the path to the weights file to be loaded.  '
@@ -455,7 +461,7 @@ def MADNet(input_shape=None,
             else:
                 input_shape = (backend.int_shape(input_tensor)[1],
                                backend.int_shape(input_tensor)[2],
-                               backend.int_shape(input_tensor)[3])
+                               3)
 
     # If input_shape is None and no input_tensor
     elif input_shape is None:
@@ -476,7 +482,7 @@ def MADNet(input_shape=None,
     layer_kwargs = {
         "kernel_size": (3, 3),
         "padding": "same",
-        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu),
+        "activation": tf.keras.layers.Activation(tf.nn.leaky_relu, dtype=tf.float32, name="leaky_relu"),
         "use_bias": True
     }
     # Image feature pyramid (feature extractor)
@@ -569,7 +575,6 @@ def MADNet(input_shape=None,
     ############################REFINEMENT################################
     final_disparity = _refinement_block(left_F2, D2, input_shape)
 
-    old_train_step = tf.keras.Model.train_step
     # Monkey patch the train_step to use custom training
     tf.keras.Model.train_step = _custom_train_step
 
