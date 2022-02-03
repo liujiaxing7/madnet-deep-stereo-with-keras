@@ -319,7 +319,12 @@ def ModuleM(layer, search_range=2):
 @tf.function
 def _custom_train_step(self, data):
     """
-    To be completed later
+    This is a monkey patch for the standard keras train_step.
+
+    This patch adds the following training features:
+        1. Training without groundtruth disparity. (self-supervised training)
+        2. Tensorboard summaries.
+        3. Loss is reduced for batch sizes larger than 1.
     """
     # Left, right image inputs and groundtruth target disparity
     inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
@@ -329,7 +334,7 @@ def _custom_train_step(self, data):
 
     with tf.GradientTape(persistent=False) as tape:
         # Forward pass
-        final_disparity = self(inputs={'left_input': left_input, 'right_input': right_input}, training=True)
+        final_disparity = self(inputs=inputs, training=True)
         # Calculate loss
         if gt is None:
             # Warp the right image into the left using final disparity
@@ -369,9 +374,75 @@ def _custom_train_step(self, data):
     return return_metrics
 
 
+def _custom_predict_step(num_adapt_modules):
+    """
+    This is a monkey patch for the standard keras predict_step.
+
+    A Closure is utilised to enable the different inferencing modes shown below.
+    This patch adds the following inferencing options:
+        1. Full adaptation while inferencing. (self-supervised learning)
+        2. or MAD adapation while inferencing. With options to adapt
+           between 1-5 modules. (also self-supervised learning, but slower learning)
+    """
+    # Full backprop on all layers
+    if num_adapt_modules == 6:
+        @tf.function
+        def _predict_step_block(self, data):
+            inputs, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+
+            left_input = inputs["left_input"]
+            right_input = inputs["right_input"]
+
+            with tf.GradientTape(persistent=False) as tape:
+                # Forward pass
+                final_disparity = self(inputs=inputs, training=True)
+                # Calculate loss
+                # Warp the right image into the left using final disparity
+                warped_left = _warp_image_block(right_input, final_disparity)
+                loss = self.compiled_loss(left_input, warped_left)
+
+                # Perform reduction on the loss
+                # Note: displayed loss will be sum of all batch losses, but backprop will use the reduced loss
+                batch_size = tf.shape(left_input)[0]
+                reduced_loss = loss / tf.cast(batch_size, dtype=tf.float32)
+
+            # Run backwards pass.
+            self.optimizer.minimize(reduced_loss, self.trainable_variables, tape=tape)
+            return final_disparity
+    # MAD adaptation
+    else:
+        @tf.function
+        def _predict_step_block(self, data):
+            inputs, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+
+            left_input = inputs["left_input"]
+            right_input = inputs["right_input"]
+
+            with tf.GradientTape(persistent=False) as tape:
+                # Forward pass
+                final_disparity = self(inputs=inputs, training=True)
+                # Calculate loss
+                # Warp the right image into the left using final disparity
+                warped_left = _warp_image_block(right_input, final_disparity)
+                loss = self.compiled_loss(left_input, warped_left)
+
+                # Perform reduction on the loss
+                # Note: displayed loss will be sum of all batch losses, but backprop will use the reduced loss
+                batch_size = tf.shape(left_input)[0]
+                reduced_loss = loss / tf.cast(batch_size, dtype=tf.float32)
+
+            # Run backwards pass.
+            # Need to add the adaptation method here
+
+            return final_disparity
+
+    return _predict_step_block
+
+
 def MADNet(input_shape=None,
            weights=None,
            input_tensor=None,
+           num_adapt_modules=0,
            search_range=2
            ):
     """
@@ -395,6 +466,13 @@ def MADNet(input_shape=None,
             or the path to the weights file to be loaded.
         input_tensor: Optional Keras tensor (i.e. output of `layers.Input()`)
             to use as image input for the model.
+        num_adapt_modules: Integer, number of modules to perform adaptation on while inferencing.
+            For standard inferencing, use num_adapt_modules=0,
+            MAD is num_adapt_modules=2-5,
+            Full backprop is num_adapt_modules=6.
+            Note: This is for inferencing only, so doesnt affect training.
+            If you would like to change the inferencing mode you will need to
+            instantiate the model again with the new num_adapt_modules value.
         search_range: maximum search displacement for the cost volume
 
     Returns:
@@ -474,6 +552,17 @@ def MADNet(input_shape=None,
                              'please ensure channels are last`; '
                              'Received `input_tensor.shape='
                              f'{input_tensor.shape}')
+
+    if type(num_adapt_modules) is not int or num_adapt_modules < 0 or num_adapt_modules > 6:
+        raise ValueError("num_adapt_modules needs to be an integer from 0-6."
+                         f"\nDetected num_adapt_modules value: {num_adapt_modules},"
+                         f"and data type: {type(num_adapt_modules)}")
+
+    if type(search_range) is not int or search_range < 1 or search_range > 10:
+        raise ValueError("search_range needs to be an integer from 1-10."
+                         f"\nDetected search_range value: {search_range},"
+                         f"and data type: {type(search_range)}")
+
     # left and right image inputs are set to the same resolution
     left_input = layers.Input(shape=input_shape, name="left_input")
     right_input = layers.Input(shape=input_shape, name="right_input")
@@ -577,6 +666,9 @@ def MADNet(input_shape=None,
 
     # Monkey patch the train_step to use custom training
     tf.keras.Model.train_step = _custom_train_step
+    # Only need to monkey patch the predict_step if doing adaptation
+    if num_adapt_modules != 0:
+        tf.keras.Model.predict_step = _custom_predict_step(num_adapt_modules)
 
     model = tf.keras.Model(inputs={
                                 "left_input": left_input,
