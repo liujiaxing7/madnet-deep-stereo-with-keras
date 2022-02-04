@@ -1,5 +1,6 @@
 import os
 import tensorflow as tf
+import tensorflow_model_optimization as tfmot
 import argparse
 from madnet import MADNet
 from preprocessing import StereoDatasetCreator
@@ -48,6 +49,10 @@ def main(args):
         weights=args.checkpoint_path,
         search_range=args.search_range
     )
+    # Apply quantization aware training to the model
+    quantize_model = tfmot.quantization.keras.quantize_model
+    model = quantize_model(model)
+
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
     # If no train groundtruth is available, then the reprojection error
     # from warping is used to calculate the loss
@@ -65,6 +70,7 @@ def main(args):
             metrics=[EndPointError(), Bad3()],
             run_eagerly=False
         )
+    model.summary()
 
     # Get training data
     train_dataset = StereoDatasetCreator(
