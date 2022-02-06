@@ -1,0 +1,79 @@
+import wandb
+import tensorflow as tf
+from madnet import colorize_img
+
+class WandBImagesCallback(tf.keras.callbacks.Callback):
+    """
+    Logs image input data and disparity predictions
+    to Weights and Biases dashboard. Can use the training data,
+    validation data or both.
+
+    Args:
+        training_data: tf.data.Dataset object used for the .fit
+            training.
+        validation_data: tf.data.Dataset object used for .fit
+            validation.
+        val_epochs: Epoch frequency to log images to W and B dashboard.
+    """
+    def __init__(
+            self,
+            training_data=None,
+            validation_data=None,
+            val_epochs=1
+    ):
+        self.val_epochs = val_epochs
+        self.training_data = None
+        self.validation_data = None
+        if training_data is not None:
+            self.training_data = iter(training_data)
+        if validation_data is not None:
+            self.validation_data = iter(validation_data)
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.val_epochs == 0:
+            if self.training_data is not None:
+                data = next(self.training_data)
+                x, y = data
+                y_pred = self.model(x)
+                train_logs = None
+                if y is not None:
+                    # Updates stateful loss metrics.
+                    self.model.compute_loss(x, y, y_pred)
+                    train_logs = self.model.compute_metrics(x, y, y_pred, None)
+
+                train_images_dict = {
+                    "Predicted Disparity": wandb.Image(colorize_img(y_pred, cmap='jet')[0].numpy()),
+                    "Left Image": wandb.Image(x["left_input"].numpy()),
+                    "Right Image": wandb.Image(x["right_input"].numpy())
+                }
+                if y is not None:
+                    train_images_dict.update({"GroundTruth Disparity": wandb.Image(colorize_img(y, cmap="jet")[0].numpy())})
+                wandb.log({
+                    "Train": train_logs,
+                    "Train": train_images_dict
+                },
+                    commit=True)
+
+            if self.validation_data is not None:
+                data = next(self.validation_data)
+                val_x, val_y = data
+                val_y_pred = self.model(val_x)
+                val_logs = None
+                if val_y is not None:
+                    # Updates stateful loss metrics.
+                    self.model.compute_loss(val_x, val_y, val_y_pred)
+                    val_logs = self.model.compute_metrics(val_x, val_y, val_y_pred, None)
+
+                val_images_dict = {
+                    "Predicted Disparity": wandb.Image(colorize_img(val_y_pred, cmap='jet')[0].numpy()),
+                    "Left Image": wandb.Image(val_x["left_input"].numpy()),
+                    "Right Image": wandb.Image(val_x["right_input"].numpy())
+                }
+                if val_y is not None:
+                    val_images_dict.update({"GroundTruth Disparity": wandb.Image(colorize_img(val_y, cmap="jet")[0].numpy())})
+                wandb.log({
+                    "Val": val_logs,
+                    "Val": val_images_dict
+                },
+                    commit=True)
+
