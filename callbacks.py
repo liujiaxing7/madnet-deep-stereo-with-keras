@@ -35,11 +35,11 @@ class WandBImagesCallback(tf.keras.callbacks.Callback):
                 data = next(self.training_data)
                 x, y = data
                 y_pred = self.model(x)
-                train_logs = None
                 if y is not None:
                     # Updates stateful loss metrics.
                     self.model.compute_loss(x, y, y_pred)
                     train_logs = self.model.compute_metrics(x, y, y_pred, None)
+                    wandb.log({"Train": train_logs}, commit=True)
 
                 train_images_dict = {
                     "Predicted Disparity": wandb.Image(colorize_img(y_pred, cmap='jet')[0].numpy()),
@@ -47,22 +47,20 @@ class WandBImagesCallback(tf.keras.callbacks.Callback):
                     "Right Image": wandb.Image(x["right_input"].numpy())
                 }
                 if y is not None:
-                    train_images_dict.update({"GroundTruth Disparity": wandb.Image(colorize_img(y, cmap="jet")[0].numpy())})
-                wandb.log({
-                    "Train": train_logs,
-                    "Train": train_images_dict
-                },
-                    commit=True)
+                    train_images_dict.update(
+                        {"GroundTruth Disparity": wandb.Image(colorize_img(y, cmap="jet")[0].numpy())}
+                    )
+                wandb.log({"Train": train_images_dict}, commit=True)
 
             if self.validation_data is not None:
                 data = next(self.validation_data)
                 val_x, val_y = data
                 val_y_pred = self.model(val_x)
-                val_logs = None
                 if val_y is not None:
                     # Updates stateful loss metrics.
                     self.model.compute_loss(val_x, val_y, val_y_pred)
                     val_logs = self.model.compute_metrics(val_x, val_y, val_y_pred, None)
+                    wandb.log({"Val": val_logs}, commit=True)
 
                 val_images_dict = {
                     "Predicted Disparity": wandb.Image(colorize_img(val_y_pred, cmap='jet')[0].numpy()),
@@ -70,10 +68,79 @@ class WandBImagesCallback(tf.keras.callbacks.Callback):
                     "Right Image": wandb.Image(val_x["right_input"].numpy())
                 }
                 if val_y is not None:
-                    val_images_dict.update({"GroundTruth Disparity": wandb.Image(colorize_img(val_y, cmap="jet")[0].numpy())})
-                wandb.log({
-                    "Val": val_logs,
-                    "Val": val_images_dict
-                },
-                    commit=True)
+                    val_images_dict.update(
+                        {"GroundTruth Disparity": wandb.Image(colorize_img(val_y, cmap="jet")[0].numpy())}
+                    )
+                wandb.log({"Val": val_images_dict}, commit=True)
+
+
+class TensorboardImagesCallback(tf.keras.callbacks.Callback):
+    """
+    Logs image input data and disparity predictions
+    to Tensorboard dashboard. Can use the training data,
+    validation data or both.
+
+    Args:
+        training_data: tf.data.Dataset object used for the .fit
+            training.
+        validation_data: tf.data.Dataset object used for .fit
+            validation.
+        val_epochs: Epoch frequency to log images to W and B dashboard.
+    """
+    def __init__(
+            self,
+            training_data=None,
+            validation_data=None,
+            val_epochs=1
+    ):
+        self.val_epochs = val_epochs
+        self.training_data = None
+        self.validation_data = None
+        if training_data is not None:
+            self.training_data = iter(training_data)
+        if validation_data is not None:
+            self.validation_data = iter(validation_data)
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.val_epochs == 0:
+            if self.training_data is not None:
+                data = next(self.training_data)
+                x, y = data
+                y_pred = self.model(x)
+                if y is not None:
+                    # Updates stateful loss metrics.
+                    self.model.compute_loss(x, y, y_pred)
+                    train_logs = self.model.compute_metrics(x, y, y_pred, None)
+                    train_logs = {"train_" + name: val for name, val in train_logs.items()}
+                    for key, value in train_logs.items():
+                        tf.summary.scalar(name=key, data=value, step=epoch)
+
+                tf.summary.image('train_01_predicted_disparity', colorize_img(y_pred, cmap='jet'),
+                                 step=epoch, max_outputs=1)
+                if y is not None:
+                    tf.summary.image('train_02_groundtruth_disparity', colorize_img(y, cmap='jet'),
+                                     step=epoch, max_outputs=1)
+                tf.summary.image('train_03_left_image', x["left_input"], step=epoch, max_outputs=1)
+                tf.summary.image('train_04_right_image', x["right_input"], step=epoch, max_outputs=1)
+
+            if self.validation_data is not None:
+                data = next(self.validation_data)
+                val_x, val_y = data
+                val_y_pred = self.model(val_x)
+                if val_y is not None:
+                    # Updates stateful loss metrics.
+                    self.model.compute_loss(val_x, val_y, val_y_pred)
+                    val_logs = self.model.compute_metrics(val_x, val_y, val_y_pred, None)
+                    val_logs = {"val_" + name: val for name, val in val_logs.items()}
+                    for key, value in val_logs.items():
+                        tf.summary.scalar(name=key, data=value, step=epoch)
+
+                tf.summary.image('val_01_predicted_disparity', colorize_img(val_y_pred, cmap='jet'),
+                                 step=epoch, max_outputs=1)
+                if val_y is not None:
+                    tf.summary.image('val_02_groundtruth_disparity', colorize_img(val_y, cmap='jet'),
+                                     step=epoch, max_outputs=1)
+                tf.summary.image('val_03_left_image', val_x["left_input"], step=epoch, max_outputs=1)
+                tf.summary.image('val_04_right_image', val_x["right_input"], step=epoch, max_outputs=1)
+
 

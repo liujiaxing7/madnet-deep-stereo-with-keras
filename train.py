@@ -4,7 +4,7 @@ import argparse
 from madnet import MADNet
 from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss, SSIMLoss
-
+from callbacks import TensorboardImagesCallback
 
 
 parser = argparse.ArgumentParser(description='Script for training MADNet')
@@ -32,6 +32,7 @@ parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, 
 parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=1000)
 parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
 parser.add_argument("--eval_steps", help='number of batches to process per evaluation', type=int, default=1)
+parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
 args = parser.parse_args()
 
 
@@ -41,6 +42,7 @@ def main(args):
         perform_val = True
     # Create output folder if it doesn't already exist
     os.makedirs(args.output_dir, exist_ok=True)
+    log_dir = args.output_dir + "/logs"
 
     # Initialise the model
     model = MADNet(
@@ -110,27 +112,31 @@ def main(args):
         save_weights_only=True,
         verbose=0
     )
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=args.output_dir + "/tensorboard",
-        histogram_freq=1,
-        write_steps_per_second=True,
-        update_freq="batch"
-    )
-
+    all_callbacks = [
+            save_callback,
+            schedule_callback
+        ]
+    if args.log_tensorboard:
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            write_steps_per_second=True,
+            update_freq="batch"
+        )
+        all_callbacks.append(tensorboard_callback)
+        tensorboard_images_callback = TensorboardImagesCallback(
+            training_data=train_ds,
+            validation_data=val_ds,
+            val_epochs=args.epoch_evals
+        )
+        all_callbacks.append(tensorboard_images_callback)
     # Fit the model
     history = model.fit(
         x=train_ds,
         epochs=args.num_epochs,
         verbose=1,
         steps_per_epoch=args.epoch_steps,
-        callbacks=[
-            tensorboard_callback,
-            save_callback,
-            schedule_callback
-        ],
-        validation_data=val_ds,
-        validation_steps=args.eval_steps,
-        validation_freq=args.epoch_evals  # number epoch evaluations
+        callbacks=all_callbacks
     )
 
 

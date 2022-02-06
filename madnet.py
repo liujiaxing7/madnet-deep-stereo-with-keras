@@ -347,16 +347,6 @@ def _custom_train_step(self, data):
         batch_size = tf.shape(left_input)[0]
         reduced_loss = loss / tf.cast(batch_size, dtype=tf.float32)
 
-    # Tensorboard images will display every 1000 steps
-    if self._train_counter % 1000 == 0:
-        tf.summary.image('01_predicted_disparity', colorize_img(final_disparity, cmap='jet'),
-                         step=self._train_counter, max_outputs=1)
-        if gt is not None:
-            tf.summary.image('02_groundtruth_disparity', colorize_img(gt, cmap='jet'),
-                             step=self._train_counter, max_outputs=1)
-        tf.summary.image('03_left_image', left_input, step=self._train_counter, max_outputs=1)
-        tf.summary.image('04_right_image', right_input, step=self._train_counter, max_outputs=1)
-
     # Run backwards pass.
     self.optimizer.minimize(reduced_loss, self.trainable_variables, tape=tape)
 

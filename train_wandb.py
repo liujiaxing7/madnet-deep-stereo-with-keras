@@ -6,11 +6,11 @@ from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss, SSIMLoss
 import wandb
 from wandb.keras import WandbCallback
-from callbacks import WandBImagesCallback
+from callbacks import WandBImagesCallback, TensorboardImagesCallback
 
 wandb.login()
 
-parser = argparse.ArgumentParser(description='Script for training MADNet')
+parser = argparse.ArgumentParser(description='Script for training MADNet and logging to Weights and Biases dashboard.')
 parser.add_argument("--train_left_dir", help='path to left images folder', required=True)
 parser.add_argument("--train_right_dir", help='path to right images folder', required=True)
 parser.add_argument("--train_disp_dir", help='path to left disparity maps folder', default=None, required=False)
@@ -36,6 +36,7 @@ parser.add_argument("--save_freq", help='model saving frequncy per steps', type=
 parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
 parser.add_argument("--dataset_name", help="Name of the dataset being trained on",
                     default="FlyingThings3D", required=False)
+parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
 args = parser.parse_args()
 
 
@@ -87,7 +88,7 @@ def main(args):
             optimizer=optimizer,
             loss=ReconstructionLoss(),
             metrics=[EndPointError(), Bad3()],
-            run_eagerly=True
+            run_eagerly=False
         )
 
     # Get training data
@@ -134,24 +135,38 @@ def main(args):
         save_weights_only=True,
         verbose=0
     )
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir,
-        histogram_freq=1,
-        write_steps_per_second=True,
-        update_freq="batch"
-    )
     wandb_callback = WandbCallback(
         monitor="loss",
         mode="min",
         save_model=False,   # Keep False, Hangs for a long time and doesn't finish the run
         save_graph=False,   # Keep False, Crashes script
-        save_weights_only=True  # Full model is very large, 300MB. With just weights its 45MB.
+        save_weights_only=True  # Keep True, full model is very large, 300MB. With just weights its 45MB.
         )
     wandb_images_callback = WandBImagesCallback(
         training_data=train_ds,
         validation_data=val_ds,
         val_epochs=args.epoch_evals
     )
+    all_callbacks = [
+            save_callback,
+            schedule_callback,
+            wandb_callback,
+            wandb_images_callback
+        ]
+    if args.log_tensorboard:
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            write_steps_per_second=True,
+            update_freq="batch"
+        )
+        all_callbacks.append(tensorboard_callback)
+        tensorboard_images_callback = TensorboardImagesCallback(
+            training_data=train_ds,
+            validation_data=val_ds,
+            val_epochs=args.epoch_evals
+        )
+        all_callbacks.append(tensorboard_images_callback)
 
     # Fit the model
     history = model.fit(
@@ -159,16 +174,7 @@ def main(args):
         epochs=args.num_epochs,
         verbose=1,
         steps_per_epoch=args.epoch_steps,
-        callbacks=[
-            tensorboard_callback,
-            save_callback,
-            schedule_callback,
-            wandb_callback,
-            wandb_images_callback
-        ],
-        #validation_data=val_ds,
-        #validation_steps=args.eval_steps,
-        #validation_freq=args.epoch_evals  # number epoch evaluations
+        callbacks=all_callbacks
     )
     run.finish()
 
