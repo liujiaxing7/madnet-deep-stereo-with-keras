@@ -1,4 +1,5 @@
 .vscode
+/wandb
 temp.py
 .idea
 __pycache__
