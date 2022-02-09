@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import argparse
+from datetime import datetime
 from madnet import MADNet
 from preprocessing import StereoDatasetCreator
 from losses_and_metrics import Bad3, EndPointError, ReconstructionLoss, SSIMLoss
@@ -10,7 +11,8 @@ from callbacks import WandBImagesCallback, TensorboardImagesCallback
 
 wandb.login()
 
-parser = argparse.ArgumentParser(description='Script for training MADNet and logging to Weights and Biases dashboard.')
+parser = argparse.ArgumentParser(description='Script for training MADNet and '
+                                             'logging to Weights and Biases dashboard.')
 parser.add_argument("--train_left_dir", help='path to left images folder', required=True)
 parser.add_argument("--train_right_dir", help='path to right images folder', required=True)
 parser.add_argument("--train_disp_dir", help='path to left disparity maps folder', default=None, required=False)
@@ -18,7 +20,7 @@ parser.add_argument("--val_left_dir", help='path to left images folder', default
 parser.add_argument("--val_right_dir", help='path to right images folder', default=None, required=False)
 parser.add_argument("--val_disp_dir", help='path to left disparity maps folder', default=None, required=False)
 parser.add_argument("--shuffle", help='shuffle training dataset', action="store_true", default=False)
-parser.add_argument("--search_range", help='maximum dispacement (ie. smallest disparity)',
+parser.add_argument("--search_range", help='maximum displacement (ie. smallest disparity)',
                     default=2, type=int, required=False)
 parser.add_argument("-o", "--output_dir",
                     help='path to folder for outputting tensorboard logs and saving model weights',
@@ -32,11 +34,12 @@ parser.add_argument("--width", help='model image input height resolution', type=
 parser.add_argument("--batch_size", help='batch size to use during training', type=int,default=1)
 parser.add_argument("--num_epochs", help='number of training epochs', type=int, default=1000)
 parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, default=1000)
-parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=1000)
+parser.add_argument("--save_freq", help='model saving frequency per steps', type=int, default=1000)
 parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
 parser.add_argument("--dataset_name", help="Name of the dataset being trained on",
                     default="FlyingThings3D", required=False)
 parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
+parser.add_argument("--sweep", help="Creates new folders for each sweep.", action="store_true")
 args = parser.parse_args()
 
 
@@ -44,6 +47,10 @@ def main(args):
     self_supervised = False
     if args.train_disp_dir is None:
         self_supervised = True
+    if args.sweep:
+        now = datetime.now()
+        current_time = now.strftime("%Y%m%dT%H%MZ")
+        args.output_dir = args.output_dir + f"/sweep-{current_time}"
     log_dir = args.output_dir + "/logs"
 
     # Initialize wandb with your project
@@ -147,11 +154,13 @@ def main(args):
         validation_data=val_ds,
         val_epochs=args.epoch_evals
     )
+    nan_callback = tf.keras.callbacks.TerminateOnNaN()
     all_callbacks = [
             save_callback,
             schedule_callback,
             wandb_callback,
-            wandb_images_callback
+            wandb_images_callback,
+            nan_callback
         ]
     if args.log_tensorboard:
         tensorboard_callback = tf.keras.callbacks.TensorBoard(

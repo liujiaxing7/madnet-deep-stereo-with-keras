@@ -10,5 +10,5 @@ __pycache__
 *.json
 Demo/*/*
 *.txt
-image_list.csv
+sweep_config.yaml
 run_commands.txt

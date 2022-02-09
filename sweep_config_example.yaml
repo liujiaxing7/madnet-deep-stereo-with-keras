@@ -1,0 +1,47 @@
+command:
+  - python
+  - ${program}
+  - ${args}
+  - "--log_tensorboard"
+  - "--sweep"
+program: train_wandb.py
+project: madnet-keras
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  search_range:
+    value: 2
+  lr:
+    values: [0.0005, 0.0001, 0.00001]
+  batch_size:
+    values: [1, 20]
+  num_epochs:
+    values: [100, 150, 200]
+  epoch_steps:
+    value: 1000
+  save_freq:
+    value: 10000
+  train_left_dir:
+    value: "/path/to/train/left_rectified"
+  train_right_dir:
+    value: "/path/to/train/right_rectified"
+  train_disp_dir:
+    value: "/path/to/train/left_disparity"
+  val_left_dir:
+    value: "/path/to/val/left_rectified"
+  val_right_dir:
+    value: "/path/to/val/right_rectified"
+  val_disp_dir:
+    value: "/path/to/val/left_disparity"
+  output_dir:
+    value: "/path/to/output_folder"
+  checkpoint_path:
+    value: "/path/to/weights.ckpt"
+  height:
+    value: 480
+  width:
+    value: 640
+  dataset_name:
+    value: "FlyingThings3D"
