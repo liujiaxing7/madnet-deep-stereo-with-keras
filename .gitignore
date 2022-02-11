@@ -1,4 +1,6 @@
 .vscode
+/env
+/venv
 /wandb
 temp.py
 .idea

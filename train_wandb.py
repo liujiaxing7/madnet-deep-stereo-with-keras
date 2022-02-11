@@ -31,7 +31,7 @@ parser.add_argument("--checkpoint_path",
 parser.add_argument("--lr", help="initial value for learning rate",default=0.0001, type=float, required=False)
 parser.add_argument("--height", help='model image input height resolution', type=int, default=480)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=640)
-parser.add_argument("--batch_size", help='batch size to use during training', type=int,default=1)
+parser.add_argument("--batch_size", help='batch size to use during training', type=int, default=1)
 parser.add_argument("--num_epochs", help='number of training epochs', type=int, default=1000)
 parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, default=1000)
 parser.add_argument("--save_freq", help='model saving frequency per steps', type=int, default=1000)
@@ -39,7 +39,7 @@ parser.add_argument("--epoch_evals", help='number of epochs per evaluation', typ
 parser.add_argument("--dataset_name", help="Name of the dataset being trained on",
                     default="FlyingThings3D", required=False)
 parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
-parser.add_argument("--sweep", help="Creates new folders for each sweep.", action="store_true")
+parser.add_argument("--sweep", help="Creates new output sub-folders for each sweep.", action="store_true")
 args = parser.parse_args()
 
 
@@ -98,7 +98,7 @@ def main(args):
             run_eagerly=False
         )
 
-    # Get training data
+    # Get dataset for training
     train_dataset = StereoDatasetCreator(
         left_dir=args.train_left_dir,
         right_dir=args.train_right_dir,
@@ -109,13 +109,23 @@ def main(args):
         disp_dir=args.train_disp_dir
     )
     train_ds = train_dataset().repeat()
-    # Get validation data
+    # Get datasets for training and callbacks
+    train_callback_dataset = StereoDatasetCreator(
+        left_dir=args.train_left_dir,
+        right_dir=args.train_right_dir,
+        batch_size=1,
+        height=args.height,
+        width=args.width,
+        shuffle=args.shuffle,
+        disp_dir=args.train_disp_dir
+    )
+    train_callback_ds = train_callback_dataset().repeat()
     val_ds = None
     if perform_val:
         val_dataset = StereoDatasetCreator(
             left_dir=args.val_left_dir,
             right_dir=args.val_right_dir,
-            batch_size=args.batch_size,
+            batch_size=1,
             height=args.height,
             width=args.width,
             shuffle=args.shuffle,
@@ -125,14 +135,10 @@ def main(args):
 
     # Create callbacks
     def scheduler(epoch, lr):
-        if epoch < 30000:
-            lr = lr
-        elif epoch < 60000:
-            lr = lr * 0.5
-        else:
+        if epoch > 100:
             # learning_rate * decay_rate ^ (global_step / decay_steps)
             decay_rate = 0.5
-            lr = lr * 0.5 * decay_rate ** (epoch // 60000)
+            lr = lr * decay_rate ** (epoch // 100)
         tf.summary.scalar('learning rate', data=lr, step=epoch)
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
@@ -150,7 +156,7 @@ def main(args):
         save_weights_only=True  # Keep True, full model is very large, 300MB. With just weights its 45MB.
         )
     wandb_images_callback = WandBImagesCallback(
-        training_data=train_ds,
+        training_data=train_callback_ds,
         validation_data=val_ds,
         val_epochs=args.epoch_evals
     )
@@ -171,7 +177,7 @@ def main(args):
         )
         all_callbacks.append(tensorboard_callback)
         tensorboard_images_callback = TensorboardImagesCallback(
-            training_data=train_ds,
+            training_data=train_callback_ds,
             validation_data=val_ds,
             val_epochs=args.epoch_evals
         )

@@ -34,13 +34,16 @@ class WandBImagesCallback(tf.keras.callbacks.Callback):
             if self.training_data is not None:
                 data = next(self.training_data)
                 x, y = data
+                shape = tf.shape(y)
+                if shape[0] > 1:
+                    raise ValueError(f"Received batch_size {shape[0]} for training_data dataset. "
+                                     "Please make sure batch size is 1")
                 y_pred = self.model(x)
                 if y is not None:
                     # Updates stateful loss metrics.
                     self.model.compute_loss(x, y, y_pred)
                     train_logs = self.model.compute_metrics(x, y, y_pred, None)
                     wandb.log({"Train": train_logs}, commit=True)
-
                 train_images_dict = {
                     "Predicted Disparity": wandb.Image(colorize_img(y_pred, cmap='jet')[0].numpy()),
                     "Left Image": wandb.Image(x["left_input"].numpy()),
@@ -55,6 +58,10 @@ class WandBImagesCallback(tf.keras.callbacks.Callback):
             if self.validation_data is not None:
                 data = next(self.validation_data)
                 val_x, val_y = data
+                shape = tf.shape(val_y)
+                if shape[0] > 1:
+                    raise ValueError(f"Received batch_size {shape[0]} for validation_data dataset. "
+                                     "Please make sure batch size is 1")
                 val_y_pred = self.model(val_x)
                 if val_y is not None:
                     # Updates stateful loss metrics.
@@ -106,6 +113,10 @@ class TensorboardImagesCallback(tf.keras.callbacks.Callback):
             if self.training_data is not None:
                 data = next(self.training_data)
                 x, y = data
+                shape = tf.shape(y)
+                if shape[0] > 1:
+                    raise ValueError(f"Received batch_size {shape[0]} for training_data dataset. "
+                                     "Please make sure batch size is 1")
                 y_pred = self.model(x)
                 if y is not None:
                     # Updates stateful loss metrics.
@@ -126,6 +137,10 @@ class TensorboardImagesCallback(tf.keras.callbacks.Callback):
             if self.validation_data is not None:
                 data = next(self.validation_data)
                 val_x, val_y = data
+                shape = tf.shape(val_y)
+                if shape[0] > 1:
+                    raise ValueError(f"Received batch_size {shape[0]} for validation_data dataset. "
+                                     "Please make sure batch size is 1")
                 val_y_pred = self.model(val_x)
                 if val_y is not None:
                     # Updates stateful loss metrics.

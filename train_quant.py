@@ -84,13 +84,23 @@ def main(args):
         disp_dir=args.train_disp_dir
     )
     train_ds = train_dataset().repeat()
-    # Get validation data
+    # Get datasets for training and callbacks
+    train_callback_dataset = StereoDatasetCreator(
+        left_dir=args.train_left_dir,
+        right_dir=args.train_right_dir,
+        batch_size=1,
+        height=args.height,
+        width=args.width,
+        shuffle=args.shuffle,
+        disp_dir=args.train_disp_dir
+    )
+    train_callback_ds = train_callback_dataset().repeat()
     val_ds = None
     if perform_val:
         val_dataset = StereoDatasetCreator(
             left_dir=args.val_left_dir,
             right_dir=args.val_right_dir,
-            batch_size=args.batch_size,
+            batch_size=1,
             height=args.height,
             width=args.width,
             shuffle=args.shuffle,
@@ -100,14 +110,10 @@ def main(args):
 
     # Create callbacks
     def scheduler(epoch, lr):
-        if epoch < 30000:
-            lr = lr
-        elif epoch < 60000:
-            lr = lr * 0.5
-        else:
+        if epoch > 100:
             # learning_rate * decay_rate ^ (global_step / decay_steps)
             decay_rate = 0.5
-            lr = lr * 0.5 * decay_rate ** (epoch // 60000)
+            lr = lr * decay_rate ** (epoch // 100)
         tf.summary.scalar('learning rate', data=lr, step=epoch)
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
@@ -130,7 +136,7 @@ def main(args):
         )
         all_callbacks.append(tensorboard_callback)
         tensorboard_images_callback = TensorboardImagesCallback(
-            training_data=train_ds,
+            training_data=train_callback_ds,
             validation_data=val_ds,
             val_epochs=args.epoch_evals
         )
@@ -138,7 +144,7 @@ def main(args):
 
     # Fit the model
     history = model.fit(
-        x=train_ds,
+        x=train_callback_ds,
         epochs=args.num_epochs,
         verbose=1,
         steps_per_epoch=args.epoch_steps,
