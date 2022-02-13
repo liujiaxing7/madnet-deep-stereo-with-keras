@@ -21,7 +21,7 @@ parser.add_argument("--search_range", help='maximum dispacement (ie. smallest di
 parser.add_argument("-o", "--output_dir",
                     help='path to folder for outputting tensorboard logs and saving model weights',
                     required=True)
-parser.add_argument("--checkpoint_path",
+parser.add_argument("--weights_path",
                     help="path to pretrained MADNet checkpoint file (for fine turning)",
                     default=None, required=False)
 parser.add_argument("--lr", help="Initial value for learning rate.", default=0.0001, type=float, required=False)
@@ -35,6 +35,9 @@ parser.add_argument("--epoch_steps", help='training steps per epoch', type=int, 
 parser.add_argument("--save_freq", help='model saving frequncy per steps', type=int, default=1000)
 parser.add_argument("--epoch_evals", help='number of epochs per evaluation', type=int, default=1)
 parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
+parser.add_argument("--use_checkpoints",
+                    help="Saves the weights using the tensorflow checkpoints format.",
+                    action="store_true")
 args = parser.parse_args()
 
 
@@ -45,11 +48,14 @@ def main(args):
     # Create output folder if it doesn't already exist
     os.makedirs(args.output_dir, exist_ok=True)
     log_dir = args.output_dir + "/logs"
+    save_extension = ".h5"
+    if args.use_checkpoints:
+        save_extension = ".ckpt"
 
     # Initialise the model
     model = MADNet(
         input_shape=(args.height, args.width, 3),
-        weights=args.checkpoint_path,
+        weights=args.weights_path,
         search_range=args.search_range
     )
     # Apply quantization aware training to the model
@@ -121,7 +127,7 @@ def main(args):
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
     save_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=args.output_dir + "/checkpoints/epoch-{epoch:04d}.ckpt",
+        filepath=args.output_dir + "/epoch-{epoch:04d}" + save_extension,
         save_freq=args.save_freq,
         save_weights_only=True,
         verbose=0

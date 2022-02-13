@@ -25,7 +25,7 @@ parser.add_argument("--search_range", help='maximum displacement (ie. smallest d
 parser.add_argument("-o", "--output_dir",
                     help='path to folder for outputting tensorboard logs and saving model weights',
                     required=True)
-parser.add_argument("--checkpoint_path",
+parser.add_argument("--weights_path",
                     help="path to pretrained MADNet checkpoint file (for fine turning)",
                     default=None, required=False)
 parser.add_argument("--lr", help="Initial value for learning rate.", default=0.0001, type=float, required=False)
@@ -41,6 +41,9 @@ parser.add_argument("--epoch_evals", help='number of epochs per evaluation', typ
 parser.add_argument("--dataset_name", help="Name of the dataset being trained on",
                     default="FlyingThings3D", required=False)
 parser.add_argument("--log_tensorboard", help="Logs results to tensorboard events files.", action="store_true")
+parser.add_argument("--use_checkpoints",
+                    help="Saves the weights using the tensorflow checkpoints format.",
+                    action="store_true")
 parser.add_argument("--sweep", help="Creates new output sub-folders for each sweep.", action="store_true")
 args = parser.parse_args()
 
@@ -54,6 +57,9 @@ def main(args):
         current_time = now.strftime("%Y%m%dT%H%MZ")
         args.output_dir = args.output_dir + f"/sweep-{current_time}"
     log_dir = args.output_dir + "/logs"
+    save_extension = ".h5"
+    if args.use_checkpoints:
+        save_extension = ".ckpt"
 
     # Initialize wandb with your project
     run = wandb.init(project='madnet-keras',
@@ -80,7 +86,7 @@ def main(args):
     # Initialise the model
     model = MADNet(
         input_shape=(args.height, args.width, 3),
-        weights=args.checkpoint_path,
+        weights=args.weights_path,
         search_range=args.search_range
     )
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
@@ -147,7 +153,7 @@ def main(args):
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
     save_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=args.output_dir + "/checkpoints/epoch-{epoch:04d}.ckpt",
+        filepath=args.output_dir + "/epoch-{epoch:04d}" + save_extension,
         save_freq=args.save_freq,
         save_weights_only=True,
         verbose=0
