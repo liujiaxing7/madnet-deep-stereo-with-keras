@@ -24,7 +24,9 @@ parser.add_argument("-o", "--output_dir",
 parser.add_argument("--checkpoint_path",
                     help="path to pretrained MADNet checkpoint file (for fine turning)",
                     default=None, required=False)
-parser.add_argument("--lr", help="initial value for learning rate",default=0.0001, type=float, required=False)
+parser.add_argument("--lr", help="Initial value for learning rate.", default=0.0001, type=float, required=False)
+parser.add_argument("--min_lr", help="Minimum learning rate cap.", default=0.0000001, type=float, required=False)
+parser.add_argument("--decay", help="Exponential decay rate.", default=0.96, type=float, required=False)
 parser.add_argument("--height", help='model image input height resolution', type=int, default=480)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=640)
 parser.add_argument("--batch_size", help='batch size to use during training',type=int,default=1)
@@ -110,10 +112,11 @@ def main(args):
 
     # Create callbacks
     def scheduler(epoch, lr):
+        min_lr = args.min_lr
         if epoch > 100:
             # learning_rate * decay_rate ^ (global_step / decay_steps)
-            decay_rate = 0.5
-            lr = lr * decay_rate ** (epoch // 100)
+            lr = lr * args.decay ** (epoch // 100)
+        lr = max(min_lr, lr)
         tf.summary.scalar('learning rate', data=lr, step=epoch)
         return lr
     schedule_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
