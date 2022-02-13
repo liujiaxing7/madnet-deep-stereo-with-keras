@@ -15,7 +15,11 @@ parser.add_argument("--search_range", help='Maximum dispacement (ie. smallest di
 parser.add_argument("-o", "--output_path",
                     help='Path for saving the adapted model (only needed if performing MAD)',
                     default=None, required=False)
-parser.add_argument("--checkpoint_path", help="Path to pretrained MADNet checkpoint file", required=True)
+parser.add_argument("--weights_path",
+                    help='One of the following pretrained weights (will download automatically): '
+                         '"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"'
+                         'or a path to pretrained MADNet weights file (for fine turning)',
+                    default=None, required=False)
 parser.add_argument("--lr", help="learning rate (only needed if performing adaptation while inferencing.",
                     default=0.0001, type=float, required=False)
 parser.add_argument("--height", help='Model image input height resolution', type=int, default=480)
@@ -36,7 +40,7 @@ def main(args):
     # Initialise the model
     model = MADNet(
         input_shape=(args.height, args.width, 3),
-        weights=args.checkpoint_path,
+        weights=args.weights_path,
         num_adapt_modules=args.num_adapt,
         search_range=args.search_range
     )

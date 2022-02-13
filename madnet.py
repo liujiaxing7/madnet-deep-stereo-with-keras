@@ -1,5 +1,6 @@
 import tensorflow as tf
 from keras import backend
+from keras.utils import data_utils
 from keras.utils import layer_utils
 from keras.engine import data_adapter
 from keras import layers
@@ -435,7 +436,8 @@ def MADNet(input_shape=None,
            num_adapt_modules=0,
            search_range=2
            ):
-    """
+    pretrained_weights = {"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"}
+    f"""
     Instantiates the MADNet architecture
 
     Reference:
@@ -453,6 +455,7 @@ def MADNet(input_shape=None,
             input_shape will be used if they match, if the shapes
             do not match then we will throw an error.
         weights: String, one of `None` (random initialization),
+            or one of the following pretrained weights: {pretrained_weights},
             or the path to the weights file to be loaded.
         input_tensor: Optional Keras tensor (i.e. output of `layers.Input()`)
             to use as image input for the model.
@@ -469,11 +472,13 @@ def MADNet(input_shape=None,
         A `keras.Model` instance.
     """
     if not (weights is None or
+            weights in pretrained_weights or
             tf.io.gfile.exists(weights) or
             tf.io.gfile.exists(weights + ".index")):
         raise ValueError('The `weights` argument should be either '
                          '`None` (random initialization), '
-                         'or the path to the weights file to be loaded.  '
+                         f'one of the following pretrained weights: {pretrained_weights}, '
+                         'or the path to the weights file to be loaded. \n'
                          f'Received `weights={weights}`')
     # Determine proper input shape and default size.
     # If both input_shape and input_tensor are used, they should match
@@ -667,7 +672,13 @@ def MADNet(input_shape=None,
                            outputs=final_disparity,
                            name="MADNet")
 
-    if weights is not None:
+    if weights in pretrained_weights:
+        pretrained_models_url = "https://huggingface.co/ChristianOrr/madnet_keras/resolve/main/"
+        model_name = "madnet_" + weights + ".h5"
+        weight_path = pretrained_models_url + weights + ".h5"
+        weights_path = data_utils.get_file(model_name, weight_path, cache_subdir='models')
+        model.load_weights(weights_path)
+    elif weights is not None:
         model.load_weights(weights)
 
     return model

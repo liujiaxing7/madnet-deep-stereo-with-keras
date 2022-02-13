@@ -26,7 +26,9 @@ parser.add_argument("-o", "--output_dir",
                     help='path to folder for outputting tensorboard logs and saving model weights',
                     required=True)
 parser.add_argument("--weights_path",
-                    help="path to pretrained MADNet checkpoint file (for fine turning)",
+                    help='One of the following pretrained weights (will download automatically): '
+                         '"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"'
+                         'or a path to pretrained MADNet weights file (for fine turning)',
                     default=None, required=False)
 parser.add_argument("--lr", help="Initial value for learning rate.", default=0.0001, type=float, required=False)
 parser.add_argument("--min_lr", help="Minimum learning rate cap.", default=0.0000001, type=float, required=False)
