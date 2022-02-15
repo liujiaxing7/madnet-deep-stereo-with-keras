@@ -27,7 +27,7 @@ parser.add_argument("--weights_path",
                     default=None, required=False)
 parser.add_argument("--lr", help="Initial value for learning rate.", default=0.0001, type=float, required=False)
 parser.add_argument("--min_lr", help="Minimum learning rate cap.", default=0.0000001, type=float, required=False)
-parser.add_argument("--decay", help="Exponential decay rate.", default=0.96, type=float, required=False)
+parser.add_argument("--decay", help="Exponential decay rate.", default=0.999, type=float, required=False)
 parser.add_argument("--height", help='model image input height resolution', type=int, default=480)
 parser.add_argument("--width", help='model image input height resolution', type=int, default=640)
 parser.add_argument("--batch_size", help='batch size to use during training',type=int,default=1)

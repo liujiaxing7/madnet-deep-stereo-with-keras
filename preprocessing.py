@@ -144,7 +144,8 @@ class StereoDatasetCreator():
         if disp_map.mean() < 0:
             disp_map *= -1
         # Change dimensions to the desired (height, width, channels)
-        disp_map = tf.image.resize(disp_map, [self.height, self.width], method="bilinear")
+        # Using nearest neighbour interpolation for sparse groundtruth disparities
+        disp_map = tf.image.resize(disp_map, [self.height, self.width], method="nearest")
         return disp_map
 
     def _get_disp(self, disp_name):
@@ -167,7 +168,8 @@ class StereoDatasetCreator():
             disp_map = tf.io.decode_png(disp_bytes, dtype=tf.uint16)
             disp_map = tf.cast(disp_map, dtype=tf.float32)
             disp_map = disp_map / 256.0
-            disp_map = tf.image.resize(disp_map, [self.height, self.width], method="bilinear")
+            # Using nearest neighbour interpolation for sparse groundtruth disparities
+            disp_map = tf.image.resize(disp_map, [self.height, self.width], method="nearest")
         else:
             raise ValueError("Unsupported disparity file detected "
                              "only .pfm and .png disparities are supported. \n"
