@@ -115,17 +115,23 @@ class SSIMLoss(tf.keras.losses.Loss):
 
 class ReconstructionLoss(tf.keras.losses.Loss):
     """
-    Reconstruction loss function (mean l1)
+    Reconstruction loss function (sum l1)
     Per pixel absolute error between groundtruth 
     disparity and predicted disparity
     Used for supervised training
     Args:
-        y_true: target image
+        y_true: target images
         y_pred: predicted image
     """
-    def __init__(self, name="mean_l1"):
+    def __init__(self, name="sum_l1"):
         super(ReconstructionLoss, self).__init__(name=name)
         self.reduction = tf.keras.losses.Reduction.NONE
 
     def call(self, y_true, y_pred):
-        return tf.reduce_sum(tf.abs(y_true-y_pred))
+        # Valid map has all non-zero pixels set to 1 and 0 pixels remain 0
+        valid_map = tf.where(
+            tf.equal(y_true, 0),
+            tf.zeros_like(y_true, dtype=tf.float32),
+            tf.ones_like(y_true, dtype=tf.float32)
+        )
+        return tf.reduce_sum(valid_map * tf.abs(y_true-y_pred))

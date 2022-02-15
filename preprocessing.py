@@ -6,7 +6,7 @@ import numpy as np
 class StereoDatasetCreator():
     """
     Takes paths to left and right stereo image directories
-    and creates a dataset that returns a batch of left 
+    and creates a tf.data.Dataset that returns a batch of left
     and right images, (Optional) returns the disparities as a target
     using the disparities directories.
     Init Args:
@@ -20,7 +20,8 @@ class StereoDatasetCreator():
     Returns:
         object that can be called to return a tf.data.Dataset
         dataset will return values of the form: 
-            {'left_input': (batch, height, width, 3), 'right_input': (batch, height, width, 3)}, (Optional) (batch, height, width, 1) else None
+            {'left_input': (batch, height, width, 3), 'right_input': (batch, height, width, 3)},
+            (Optional) (batch, height, width, 1) else None
 
     This can prepare MADNet data for training/evaluation and prediction
     """
@@ -33,16 +34,31 @@ class StereoDatasetCreator():
         self.width = width
         self.shuffle = shuffle
 
-        self.left_names = tf.constant(sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]))
-        self.right_names = tf.constant(sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")]))
+        self.left_names = tf.constant(
+            sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]
+            )
+        )
+        self.right_names = tf.constant(
+            sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
+        )
         if self.disp_dir is not None:
-            self.disp_names = tf.constant(sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")]))
+            self.disp_names = tf.constant(
+                sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
+            )
 
         # Check that there is a left image for every right image
         self.num_left = len(self.left_names)
         self.num_right = len(self.right_names)
         if self.num_left != self.num_right:
-            raise ValueError(f"Number of right and left images do now match. Left number: {self.num_left}. Right number: {self.num_right}")
+            raise ValueError(f"Number of right and left images do not match. "
+                             f"Left number: {self.num_left}. Right number: {self.num_right}")
+        if self.disp_dir is not None:
+            self.num_disp = len(self.disp_names)
+            if self.num_disp != self.num_left:
+                raise ValueError(f"Number of disparity and left/right images do not match. "
+                                 f"Disparity number: {self.num_disp}. "
+                                 f"Left number: {self.num_left}. "
+                                 f"Right number: {self.num_right}.")
 
     def _get_image(self, path):
         """
@@ -110,7 +126,7 @@ class StereoDatasetCreator():
     def _get_pfm(self, path):
         """
         Reads a single pfm disparity file and
-        returns a numpy disparity map
+        returns a disparity map
         Args:
             path: path to the disparity file (will be in Tensor format, since its called in a graph)
         Returns:
@@ -123,13 +139,39 @@ class StereoDatasetCreator():
         disp_map = self.readPFM(path)
 
         # Set inf values to 0 (0 is infinitely far away, so basically the same)
-        disp_map[disp_map==np.inf] = 0
+        disp_map[disp_map == np.inf] = 0
         # convert values to positive
         if disp_map.mean() < 0:
             disp_map *= -1
         # Change dimensions to the desired (height, width, channels)
-        #disp_map = tf.expand_dims(disp_map, axis=-1)
         disp_map = tf.image.resize(disp_map, [self.height, self.width], method="bilinear")
+        return disp_map
+
+    def _get_disp(self, disp_name):
+        """
+        Args:
+            disp_name: Tensor string, name of the disparity file
+        Returns:
+            disparity map in the format [height, width, 1],
+            with float32 values representing the absolute
+            pixel disparity.
+        """
+        disp_extension = tf.strings.split(disp_name, sep=".")[-1].numpy().decode()
+        disp_path = f"{self.disp_dir}/" + disp_name
+        if disp_extension == "pfm" or disp_extension == "PFM":
+            # wrapping in py_function so that the function can execute eagerly and run non tensor ops
+            disp_map = tf.py_function(func=self._get_pfm, inp=[disp_path], Tout=tf.float32)
+        elif disp_extension == "png" or disp_extension == "PNG":
+            disp_bytes = tf.io.read_file(disp_path)
+            # Using uint16 for higher precision
+            disp_map = tf.io.decode_png(disp_bytes, dtype=tf.uint16)
+            disp_map = tf.cast(disp_map, dtype=tf.float32)
+            disp_map = disp_map / 256.0
+            disp_map = tf.image.resize(disp_map, [self.height, self.width], method="bilinear")
+        else:
+            raise ValueError("Unsupported disparity file detected "
+                             "only .pfm and .png disparities are supported. \n"
+                             f"Detected extension: .{disp_extension} from: {disp_name}")
         return disp_map
 
     def _process_single_batch(self, index):
@@ -142,14 +184,13 @@ class StereoDatasetCreator():
         """
         left_name = self.left_names[index]
         right_name = self.right_names[index]
-        left_image = self._get_image(f"{self.left_dir}/" +  left_name)
+        left_image = self._get_image(f"{self.left_dir}/" + left_name)
         right_image = self._get_image(f"{self.right_dir}/" + right_name)
 
         disp_map = None  
         if self.disp_dir is not None:
-            disp_name = self.disp_names[index]  
-            # wrapping in py_function so that the function can execute eagerly and run non tensor ops
-            disp_map = tf.py_function(func=self._get_pfm, inp=[f"{self.disp_dir}/" + disp_name], Tout=tf.float32)
+            disp_name = self.disp_names[index]
+            disp_map = tf.py_function(func=self._get_disp, inp=[disp_name], Tout=tf.float32)
 
         return {'left_input': left_image, 'right_input': right_image}, disp_map
 
@@ -160,7 +201,7 @@ class StereoDatasetCreator():
         """
         indexes = list(range(self.num_left))   
         indexes_ds = tf.data.Dataset.from_tensor_slices(indexes)
-        if self.shuffle == True:
+        if self.shuffle:
             indexes_ds.shuffle(buffer_size=self.num_left, seed=101, reshuffle_each_iteration=False)
 
         ds = indexes_ds.map(self._process_single_batch)
@@ -172,7 +213,7 @@ class StereoDatasetCreator():
 class StereoGenerator(tf.keras.utils.Sequence):
     """
     This method is currently not working.
-    Please use the StereoDatasetCreator instead for datapreperation.
+    Please use the StereoDatasetCreator instead for data preperation.
     The Input data has shape (None, None, None, None) for each image when training
     Takes paths to left and right stereo image directories
     and creates a generator that returns a batch of left 
@@ -193,17 +234,18 @@ class StereoGenerator(tf.keras.utils.Sequence):
         self.num_left = len(self.left_paths)
         self.num_right = len(self.right_paths)
         if self.num_left != self.num_right:
-            raise ValueError(f"Number of right and left images do now match. Left number: {self.num_left}. Right number: {self.num_right}")
+            raise ValueError(f"Number of right and left images do now match. "
+                             f"Left number: {self.num_left}. Right number: {self.num_right}")
         # Check if images names are identical
         self.left_paths.sort()
         self.right_paths.sort()
         if self.left_paths != self.right_paths:
-            raise ValueError("Left and right image names do not match. Please make sure left and right image names are identical")
+            raise ValueError("Left and right image names do not match. "
+                             "Please make sure left and right image names are identical")
 
     def __len__(self):
         # Denotes the number of batches per epoch
         return self.num_left // self.batch_size
-
 
     def _get_image(self, image_dir, image_name):
         # get a single image helper function

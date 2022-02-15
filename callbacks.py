@@ -113,7 +113,7 @@ class TensorboardImagesCallback(tf.keras.callbacks.Callback):
             if self.training_data is not None:
                 data = next(self.training_data)
                 x, y = data
-                shape = tf.shape(y)
+                shape = tf.shape(x["left_input"])
                 if shape[0] > 1:
                     raise ValueError(f"Received batch_size {shape[0]} for training_data dataset. "
                                      "Please make sure batch size is 1")
@@ -137,7 +137,7 @@ class TensorboardImagesCallback(tf.keras.callbacks.Callback):
             if self.validation_data is not None:
                 data = next(self.validation_data)
                 val_x, val_y = data
-                shape = tf.shape(val_y)
+                shape = tf.shape(val_x["left_input"])
                 if shape[0] > 1:
                     raise ValueError(f"Received batch_size {shape[0]} for validation_data dataset. "
                                      "Please make sure batch size is 1")
