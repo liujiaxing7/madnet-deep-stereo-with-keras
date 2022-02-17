@@ -20,7 +20,7 @@ parser.add_argument("-o", "--output_path",
                     default=None, required=False)
 parser.add_argument("--weights_path",
                     help='One of the following pretrained weights (will download automatically): '
-                         '"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"'
+                         '"synthetic", "kitti", "tf1_conversion_synthetic", "tf1_conversion_kitti"'
                          'or a path to pretrained MADNet weights file (for fine turning)',
                     default=None, required=False)
 parser.add_argument("--lr", help="learning rate (only needed if performing adaptation while inferencing.",

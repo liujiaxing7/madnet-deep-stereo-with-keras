@@ -483,7 +483,7 @@ def MADNet(input_shape=None,
            mad_mode="random",
            search_range=2
            ):
-    pretrained_weights = {"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"}
+    pretrained_weights = {"synthetic", "kitti", "tf1_conversion_synthetic", "tf1_conversion_kitti"}
     f"""
     Instantiates the MADNet architecture
 
