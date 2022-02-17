@@ -10,6 +10,9 @@ parser.add_argument("--left_dir", help='Path to left images folder', required=Tr
 parser.add_argument("--right_dir", help='Path to right images folder', required=True)
 parser.add_argument("--num_adapt", help='Number of modules to adapt, needs to be an integer from 0-6',
                     default=0, type=int, required=False)
+parser.add_argument("--mad_mode", help='Module selection method for MAD adaptation. \n'
+                                       'Options are "random" and "sequential".',
+                    default="random", required=False)
 parser.add_argument("--search_range", help='Maximum dispacement (ie. smallest disparity)',
                     default=2, type=int, required=False)
 parser.add_argument("-o", "--output_path",
@@ -42,6 +45,7 @@ def main(args):
         input_shape=(args.height, args.width, 3),
         weights=args.weights_path,
         num_adapt_modules=args.num_adapt,
+        mad_mode=args.mad_mode,
         search_range=args.search_range
     )
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
@@ -49,7 +53,7 @@ def main(args):
         optimizer=optimizer,
         loss=SSIMLoss(),
         metrics=None,
-        run_eagerly=False
+        run_eagerly=True if args.num_adapt not in (0, 6) else False
     )
     # Get inferencing data
     predict_dataset = StereoDatasetCreator(

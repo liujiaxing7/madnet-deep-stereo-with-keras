@@ -1,3 +1,4 @@
+import random
 import tensorflow as tf
 from keras import backend
 from keras.utils import data_utils
@@ -365,7 +366,7 @@ def _custom_train_step(self, data):
     return return_metrics
 
 
-def _custom_predict_step(num_adapt_modules):
+def _custom_predict_step(num_adapt, mad_type):
     """
     This is a monkey patch for the standard keras predict_step.
 
@@ -376,7 +377,7 @@ def _custom_predict_step(num_adapt_modules):
            between 1-5 modules. (also self-supervised learning, but slower learning)
     """
     # Full backprop on all layers
-    if num_adapt_modules == 6:
+    if num_adapt == 6:
         @tf.function
         def _predict_step_block(self, data):
             inputs, _, _ = data_adapter.unpack_x_y_sample_weight(data)
@@ -402,14 +403,37 @@ def _custom_predict_step(num_adapt_modules):
             return final_disparity
     # MAD adaptation
     else:
-        @tf.function
+        #@tf.function
         def _predict_step_block(self, data):
+            if not self.run_eagerly:
+                raise ValueError("MAD adaptation is only supported with eager mode on. \n"
+                                 "Please enable eager mode or perform inference only (num_adapt_modules = 0), "
+                                 "or use full MAD (num_adapt_modules = 6).")
+            module_layers = [
+                ["conv1", "conv2",
+                 "context1", "context2", "context3", "context4", "context5", "context6", "context7"],
+                ["conv3", "conv4",
+                 "volume_filtering_2_disp1", "volume_filtering_2_disp2", "volume_filtering_2_disp3",
+                 "volume_filtering_2_disp4", "volume_filtering_2_disp5", "volume_filtering_2_disp6"],
+                ["conv5", "conv6",
+                 "volume_filtering_3_disp1", "volume_filtering_3_disp2", "volume_filtering_3_disp3",
+                 "volume_filtering_3_disp4", "volume_filtering_3_disp5", "volume_filtering_3_disp6"],
+                ["conv7", "conv8",
+                 "volume_filtering_4_disp1", "volume_filtering_4_disp2", "volume_filtering_4_disp3",
+                 "volume_filtering_4_disp4", "volume_filtering_4_disp5", "volume_filtering_4_disp6"],
+                ["conv9", "conv10",
+                 "volume_filtering_5_disp1", "volume_filtering_5_disp2", "volume_filtering_5_disp3",
+                 "volume_filtering_5_disp4", "volume_filtering_5_disp5", "volume_filtering_5_disp6"],
+                ["conv11", "conv12",
+                 "volume_filtering_6_disp1", "volume_filtering_6_disp2", "volume_filtering_6_disp3",
+                 "volume_filtering_6_disp4", "volume_filtering_6_disp5", "volume_filtering_6_disp6"],
+            ]
             inputs, _, _ = data_adapter.unpack_x_y_sample_weight(data)
 
             left_input = inputs["left_input"]
             right_input = inputs["right_input"]
 
-            with tf.GradientTape(persistent=False) as tape:
+            with tf.GradientTape(persistent=True) as tape:
                 # Forward pass
                 final_disparity = self(inputs=inputs, training=True)
                 # Calculate loss
@@ -423,7 +447,29 @@ def _custom_predict_step(num_adapt_modules):
                 reduced_loss = loss / tf.cast(batch_size, dtype=tf.float32)
 
             # Run backwards pass.
-            # Need to add the adaptation method here
+            if mad_type == "random":
+                # adapt_modules = random.sample(list(module_layers_dict.keys()), num_adapt)
+                adapt_modules = random.sample(range(6), num_adapt)
+            elif mad_type == "sequential":
+                adapt_modules = []
+                for i in range(num_adapt):
+                    new_id = i + self.last_adapt
+                    if new_id > 5:
+                        new_id = new_id % 6
+                    adapt_modules.append(new_id)
+                self.last_adapt.assign(new_id)
+
+            all_vars = [[], [], [], [], [], []]
+            for i in range(6):
+                for layer in module_layers[i]:
+                    model_layer = self.get_layer(layer)
+                    layer_vars = model_layer.trainable_variables
+                    for var in layer_vars:
+                        all_vars[i].append(var)
+            # The following minimize loop only works with eager mode
+            for i in range(6):
+                if i in adapt_modules:
+                    self.optimizer.minimize(reduced_loss, all_vars[i], tape=tape)
 
             return final_disparity
 
@@ -434,6 +480,7 @@ def MADNet(input_shape=None,
            weights=None,
            input_tensor=None,
            num_adapt_modules=0,
+           mad_mode="random",
            search_range=2
            ):
     pretrained_weights = {"synthetic", "tf1_conversion_synthetic", "tf1_conversion_kitti"}
@@ -466,6 +513,10 @@ def MADNet(input_shape=None,
             Note: This is for inferencing only, so doesnt affect training.
             If you would like to change the inferencing mode you will need to
             instantiate the model again with the new num_adapt_modules value.
+        mad_mode: String, one of "random" or "sequential"
+            This is only needed for MAD adaptation with num_adapt_modules in 1-5.
+            "random", selects the modules to adapt randomly.
+            "sequential", selects the modules to adapt sequentially. 
         search_range: maximum search displacement for the cost volume
 
     Returns:
@@ -663,7 +714,8 @@ def MADNet(input_shape=None,
     tf.keras.Model.train_step = _custom_train_step
     # Only need to monkey patch the predict_step if doing adaptation
     if num_adapt_modules != 0:
-        tf.keras.Model.predict_step = _custom_predict_step(num_adapt_modules)
+        tf.keras.Model.last_adapt = tf.Variable(6)
+        tf.keras.Model.predict_step = _custom_predict_step(num_adapt_modules, mad_mode)
 
     model = tf.keras.Model(inputs={
                                 "left_input": left_input,
