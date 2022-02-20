@@ -366,6 +366,27 @@ def _custom_train_step(self, data):
     return return_metrics
 
 
+def _custom_test_step(predict_func):
+
+    #@tf.function
+    def _test_step_block(self, data):
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+        y_pred = predict_func(self, data)
+        # Updates stateful loss metrics.
+        return_metrics = {}
+        self.compiled_metrics.reset_state()
+        self.compiled_metrics.update_state(y, y_pred, sample_weight)
+        # Collect metrics to return
+        for metric in self.metrics:
+            result = metric.result()
+            if isinstance(result, dict):
+                return_metrics.update(result)
+            else:
+                return_metrics[metric.name] = result
+        return return_metrics
+    return _test_step_block
+
+
 def _custom_predict_step(num_adapt, mad_type):
     """
     This is a monkey patch for the standard keras predict_step.
@@ -716,6 +737,7 @@ def MADNet(input_shape=None,
     if num_adapt_modules != 0:
         tf.keras.Model.last_adapt = tf.Variable(6)
         tf.keras.Model.predict_step = _custom_predict_step(num_adapt_modules, mad_mode)
+    tf.keras.Model.test_step = _custom_test_step(tf.keras.Model.predict_step)
 
     model = tf.keras.Model(inputs={
                                 "left_input": left_input,
