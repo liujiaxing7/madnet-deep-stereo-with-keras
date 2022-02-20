@@ -137,6 +137,19 @@ Inferencing can be performed using full MAD (adapt all modules), MAD (adapt 1-5 
    --width 640 \
    --batch_size 1     
    ```
+## Adaptation Results
+The image below shows the predictions of the different methods at each step. The depth map colors are such that red is closest, green is medium distance and blue far.
+
+Starting from the left to right column:
+1. Left RGB images.
+2. Predictions from the pretrained Kitti model (no adaptation).
+3. Predictions from pretrained synthetic weights with full MAD (adapting all 6 modules).
+4. Predictions from pretrained synthetic weights with MAD (adapting 1 module randomly).
+5. Predictions from pretrained synthetic weights (no adaptation).
+
+
+![image](images/adaptation_results.png)
+
 
 ## BibTeX entry and citation info
 
