@@ -54,9 +54,10 @@ def main(args):
     if args.log_tensorboard and args.output_dir is None:
         raise ValueError("Please provide an output dir when logging to tensorboard. \n"
                          f"Provided args: log_tensorboard: {args.log_tensorboard}, output_dir: {args.output_dir}")
-    # Create output folder if it doesn't already exist
-    os.makedirs(args.output_dir, exist_ok=True)
-    log_dir = args.output_dir + "/logs"
+    if args.output_dir is not None:
+        # Create output folder if it doesn't already exist
+        os.makedirs(args.output_dir, exist_ok=True)
+        log_dir = args.output_dir + "/logs"
     images_dir = None
     if args.save_predictions:
         images_dir = args.output_dir + "/prediction_images"
@@ -75,7 +76,7 @@ def main(args):
         optimizer=optimizer,
         loss=SSIMLoss(),
         metrics=[EndPointError(), Bad3()],
-        run_eagerly=True if args.num_adapt not in (0, 6) else False
+        run_eagerly=False
     )
     # Get eval data
     eval_dataset = StereoDatasetCreator(
@@ -115,8 +116,14 @@ def main(args):
         callbacks=all_callbacks,
         return_dict=True
     )
-    total_evaluate_time = time.time() - start_time
-    print(f"Evaluation took: {total_evaluate_time} seconds")
+    evaluate_sec = time.time() - start_time
+    print(f"Evaluation took: {evaluate_sec // 60} min, {evaluate_sec % 60} s")
+    print(f"Evaluation total seconds: {evaluate_sec} s")
+    try:
+        print(f"FPS: {args.steps / evaluate_sec}")
+    except:
+        print("Specify steps to get FPS")
+
     print(f"Results: {results_dict}")
 
 

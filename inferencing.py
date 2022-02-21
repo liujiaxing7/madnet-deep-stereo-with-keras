@@ -53,7 +53,7 @@ def main(args):
         optimizer=optimizer,
         loss=SSIMLoss(),
         metrics=None,
-        run_eagerly=True if args.num_adapt not in (0, 6) else False
+        run_eagerly=False
     )
     # Get inferencing data
     predict_dataset = StereoDatasetCreator(

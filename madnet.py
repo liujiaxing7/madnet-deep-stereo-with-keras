@@ -368,7 +368,7 @@ def _custom_train_step(self, data):
 
 def _custom_test_step(predict_func):
 
-    #@tf.function
+    @tf.function
     def _test_step_block(self, data):
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
         y_pred = predict_func(self, data)
@@ -424,12 +424,8 @@ def _custom_predict_step(num_adapt, mad_type):
             return final_disparity
     # MAD adaptation
     else:
-        #@tf.function
+        @tf.function
         def _predict_step_block(self, data):
-            if not self.run_eagerly:
-                raise ValueError("MAD adaptation is only supported with eager mode on. \n"
-                                 "Please enable eager mode or perform inference only (num_adapt_modules = 0), "
-                                 "or use full MAD (num_adapt_modules = 6).")
             module_layers = [
                 ["conv1", "conv2",
                  "context1", "context2", "context3", "context4", "context5", "context6", "context7"],
@@ -487,10 +483,29 @@ def _custom_predict_step(num_adapt, mad_type):
                     layer_vars = model_layer.trainable_variables
                     for var in layer_vars:
                         all_vars[i].append(var)
-            # The following minimize loop only works with eager mode
-            for i in range(6):
-                if i in adapt_modules:
-                    self.optimizer.minimize(reduced_loss, all_vars[i], tape=tape)
+
+            # Graph tracing requires all variables to be created on the first pass,
+            # so performing full mad on first pass
+            if self.first_adapt_pass:
+                adapt_modules = range(6)
+                self.first_adapt_pass = False
+
+            if mad_type == "random":
+                # this adaptation method is faster but doesn't work with sequential
+                for i in range(6):
+                    if i in adapt_modules:
+                        self.optimizer.minimize(reduced_loss, all_vars[i], tape=tape)
+            elif mad_type == "sequential":
+                def do_nothing(loss, vars, tape):
+                    # function that mimics the inputs and outputs of the optimize function
+                    return tf.constant([True, True, True, True, True, True])
+
+                for i in range(6):
+                    tf.cond(
+                        tf.reduce_any(tf.equal(i, adapt_modules)),
+                        true_fn=lambda: self.optimizer.minimize(reduced_loss, all_vars[i], tape=tape),
+                        false_fn=lambda: do_nothing(reduced_loss, all_vars[i], tape=tape)
+                    )
 
             return final_disparity
 
@@ -736,6 +751,7 @@ def MADNet(input_shape=None,
     # Only need to monkey patch the predict_step if doing adaptation
     if num_adapt_modules != 0:
         tf.keras.Model.last_adapt = tf.Variable(6)
+        tf.keras.Model.first_adapt_pass = True
         tf.keras.Model.predict_step = _custom_predict_step(num_adapt_modules, mad_mode)
     tf.keras.Model.test_step = _custom_test_step(tf.keras.Model.predict_step)
 
