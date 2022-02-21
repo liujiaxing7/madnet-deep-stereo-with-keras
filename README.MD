@@ -138,18 +138,40 @@ Inferencing can be performed using full MAD (adapt all modules), MAD (adapt 1-5 
    --batch_size 1     
    ```
 ## Adaptation Results
+### Disparity Maps
 The image below shows the predictions of the different methods at each step. The depth map colors are such that red is closest, green is medium distance and blue far.
 
 Starting from the left to right column:
-1. Left RGB images.
-2. Predictions from the pretrained Kitti model (no adaptation).
-3. Predictions from pretrained synthetic weights with full MAD (adapting all 6 modules).
-4. Predictions from pretrained synthetic weights with MAD (adapting 1 module randomly).
-5. Predictions from pretrained synthetic weights (no adaptation).
+1. Left rectified RGB images.
+2. Disparity predictions from the pretrained Kitti model (no adaptation).
+3. Disparity predictions from pretrained synthetic weights with full MAD (adapting all 6 modules).
+4. Disparity predictions from pretrained synthetic weights with MAD (adapting 1 module randomly).
+5. Disparity predictions from pretrained synthetic weights (no adaptation).
 
 
 ![image](images/adaptation_results.png)
 
+### Inferencing speed
+The table and graph below shows the frames per second for the different inferencing modes on batches of 100, 1,000 and 10,000 images, using an RTX 3050 Ti laptop GPU. The results were obtained using the evaluation.py script on kitti images (480x640) with no logging or saving images. The results show the model perform significantly faster on larger batch sizes. The MAD adaptation modes only start to show a sizeable benefit over Full MAD at the 10,000 batch size. Sequential MAD performs consistently worse than both Full MAD and random MAD at all batch sizes, making this method redundant unless further optimizations can be found.
+
+Note that graph execution is enabled by default using all methods. This provides a speed increase at the cost of having a very slow start while the graph is being traced. The results show that the graph tracing overhead gets diminished as the batch size increases.
+
+|                  | FPS 100 | FPS 1,000 | FPS 10,000 |
+|------------------|---------|-----------|------------|
+| No Adaptation    | 11.1    | 31.8      | 37.8       |
+| Full MAD         | 2.6     | 10.3      | 14.2       |
+| MAD 1 Random     | 2.4     | 11.1      | 18.6       |
+| MAD 2 Random     | 2.4     | 10.7      | 18.4       |
+| MAD 3 Random     | 2.3     | 10.8      | 16.9       |
+| MAD 4 Random     | 2.2     | 11.0      | 15.1       |
+| MAD 5 Random     | 2.1     | 9.9       | 14.4       |
+| MAD 1 Sequential | 2.1     | 9.6       | 14.5       |
+| MAD 2 Sequential | 2       | 8.1       | 11.6       |
+| MAD 3 Sequential | 1.9     | 6.7       | 8.9        |
+| MAD 4 Sequential | 1.8     | 5.7       | 7.2        |
+| MAD 5 Sequential | 1.8     | 5.1       | 6.2        |
+
+![image](images/frame_rate_line_plot.png)
 
 ## BibTeX entry and citation info
 
