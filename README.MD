@@ -152,9 +152,9 @@ Starting from the left to right column:
 ![image](images/adaptation_results.png)
 
 ### Inferencing speed
-The table and graph below shows the frames per second for the different inferencing modes on batches of 100, 1,000 and 10,000 images, using an RTX 3050 Ti laptop GPU. The results were obtained using the evaluation.py script on kitti images (480x640) with no logging or saving images. The results show the model perform significantly faster on larger batch sizes. The MAD adaptation modes only start to show a sizeable benefit over Full MAD at the 10,000 batch size. Sequential MAD performs consistently worse than both Full MAD and random MAD at all batch sizes, making this method redundant unless further optimizations can be found.
+The table and graph below shows the frames per second for the different inferencing modes on dataset sizes of 100, 1,000 and 10,000 images, using an RTX 3050 Ti laptop GPU. The results were obtained using the evaluation.py script on kitti images (480x640) with no logging or saving images. The results show the model perform significantly faster on larger dataset sizes. The MAD adaptation modes only start to show a sizeable benefit over Full MAD at the 10,000 dataset size. Sequential MAD performs consistently worse than both Full MAD and random MAD at all dataset sizes, making this method redundant unless further optimizations can be found.
 
-Note that graph execution is enabled by default using all methods. This provides a speed increase at the cost of having a very slow start while the graph is being traced. The results show that the graph tracing overhead gets diminished as the batch size increases.
+Note that graph execution is enabled by default using all methods. This provides a speed increase at the cost of having a very slow start while the graph is being traced. The results show that the graph tracing overhead gets diminished as the dataset size increases.
 
 |                  | FPS 100 | FPS 1,000 | FPS 10,000 |
 |------------------|---------|-----------|------------|
