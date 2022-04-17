@@ -25,7 +25,7 @@ class StereoDatasetCreator():
 
     This can prepare MADNet data for training/evaluation and prediction
     """
-    def __init__(self, left_dir, right_dir, height, width, batch_size=1, shuffle=False, disp_dir=None):
+    def __init__(self, left_dir, right_dir, height, width, batch_size=1, shuffle=False, disp_dir=None, augment=False):
         self.left_dir = left_dir
         self.right_dir = right_dir
         self.disp_dir = disp_dir
@@ -33,6 +33,7 @@ class StereoDatasetCreator():
         self.height = height
         self.width = width
         self.shuffle = shuffle
+        self.augment = augment
 
         self.left_names = tf.constant(
             sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]
@@ -76,6 +77,10 @@ class StereoDatasetCreator():
         image = tf.io.decode_image(raw, channels=3, dtype=tf.float32, expand_animations=False)
         # Change dimensions to the desired model dimensions
         image = tf.image.resize(image, [self.height, self.width], method="bilinear")
+        if self.augment:
+            image = tf.image.random_hue(image, 0.08)
+            image = tf.image.random_saturation(image, 0.6, 1.6)
+            image = tf.image.random_contrast(image, 0.7, 1.3)
         return image
 
     def readPFM(self, file):

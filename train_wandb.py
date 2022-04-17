@@ -47,6 +47,7 @@ parser.add_argument("--use_checkpoints",
                     help="Saves the weights using the tensorflow checkpoints format.",
                     action="store_true")
 parser.add_argument("--sweep", help="Creates new output sub-folders for each sweep.", action="store_true")
+parser.add_argument("--augment", help="Performs augmentation on the left and right images.", action="store_true")
 args = parser.parse_args()
 
 
@@ -117,7 +118,8 @@ def main(args):
         height=args.height,
         width=args.width,
         shuffle=args.shuffle,
-        disp_dir=args.train_disp_dir
+        disp_dir=args.train_disp_dir,
+        augment=args.augment
     )
     train_ds = train_dataset().repeat()
     # Get datasets for training and callbacks
@@ -128,7 +130,8 @@ def main(args):
         height=args.height,
         width=args.width,
         shuffle=args.shuffle,
-        disp_dir=args.train_disp_dir
+        disp_dir=args.train_disp_dir,
+        augment=args.augment
     )
     train_callback_ds = train_callback_dataset().repeat()
     val_ds = None
