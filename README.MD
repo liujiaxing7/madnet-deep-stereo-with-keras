@@ -24,6 +24,7 @@ This code is an implementation of MADNet in TensorFlow 2 / Keras. MADNet was cre
 - Tensorflow 1 MADNet implementation: [Real-time-self-adaptive-deep-stereo](https://github.com/CVLAB-Unibo/Real-time-self-adaptive-deep-stereo).
 - Research paper for MADNet and MAD: [Real-time self-adaptive deep stereo](https://arxiv.org/abs/1810.05424). 
 - MAD++ adaptation paper: [Continual Adaptation for Deep Stereo](https://arxiv.org/pdf/2007.05233.pdf).
+- Stereo Camera Calibration: [stereo-camera-calibration](https://github.com/ChristianOrr/stereo-camera-calibration).
 
 ![image](images/MADNet.png)
 
@@ -43,7 +44,9 @@ pip3 install -r requirements.txt
 Pretrained weights from flyingthings-3d and kitti datasets are available in the huggingface repo: [madnet_keras](https://huggingface.co/ChristianOrr/madnet_keras). Note that it's not necessary to manually download the weights. The weights can be automatically downloaded and loaded into the model by specifying "kitti" or "synthetic" for the --weights_path parameter while training or inferencing.
 
 ## Data Preparation
-For the training and inferencing scripts to function the data needs to be prepared in the following way. For supervised training the left rectified, right rectified and groundtruth is needed. Optionally for validation, the rectified left, rectified right and groundtruth can also be used during supervised training. Note that Bad3 and EPE metrics can only be provided if groundtruth is available. Each file needs to be placed in its own folder with the same filename, since the left, right and groundtruth is matched based on the order they are placed in the folder. For unsupervised training / inferencing the same method is used but only left and right images are needed. If you would like to load the images using a different method (like from a CSV file) you will need to update the StereoDatasetCreator class with your own code in the preprocessing.py script.   
+For the training and inferencing scripts to function the data needs to be prepared in the following way. For supervised training the left rectified, right rectified and groundtruth is needed. Optionally for validation, the rectified left, rectified right and groundtruth can also be used during supervised training. Note that Bad3 and EPE metrics can only be provided if groundtruth is available. Each file needs to be placed in its own folder with the same filename, since the left, right and groundtruth is matched based on the order they are placed in the folder. For unsupervised training / inferencing the same method is used but only left and right rectified images are needed. If you would like to load the images using a different method (like from a CSV file) you will need to update the StereoDatasetCreator class with your own code in the preprocessing.py script.  
+
+Note: The stereo images need to be rectified for both supervised and unsupervised training and inferencing. If you don't have rectified stereo images or don't know what that is, don't worry, I have created a notebook to show you how to calibrate and rectify your stereo images  [here](https://colab.research.google.com/github/ChristianOrr/stereo-camera-calibration/blob/main/stereo_calibration.ipynb).
 
 ## MADNet Training
 Two training options are available, supervised training (with groundtruth disparity) and unsupervised training (no groundtruth disparity). Its recommended to either use pretrained weights or perform supervised training on the model before performing unsupervised training on your dataset. Alternatively fine-tuning on the model can be performed while inferencing. Examples for both training methods are listed below:
