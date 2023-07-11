@@ -95,9 +95,14 @@ def bilinear_sampler(imgs, coords):
     coords_x = tf.cast(coords_x, 'float32')
     coords_y = tf.cast(coords_y, 'float32')
 
-    x0 = tf.floor(coords_x)
+    # x0 = tf.floor(coords_x)
+    x0 = tf.cast(coords_x + 2.0, 'int32')
+    x0 = tf.cast(x0 - 2, 'float32')
     x1 = x0 + 1
-    y0 = tf.floor(coords_y)
+
+    # y0 = tf.floor(coords_y)
+    y0 = tf.cast(coords_y + 2.0, 'int32')
+    y0 = tf.cast(y0 - 2, 'float32')
     y1 = y0 + 1
 
     y_max = tf.cast(inp_size[1] - 1, 'float32')
