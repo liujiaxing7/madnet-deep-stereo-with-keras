@@ -54,7 +54,7 @@ def _cost_volume_block(c1, warp, search_range=2):
 
     cost_vol = []
     for i in range(0, max_offset):
-        slice = padded_lvl[:, :, i:width+i, :]
+        slice = tf.slice(padded_lvl, [0, 0, i, 0], [-1, -1, width, -1])
         cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
         cost_vol.append(cost)
 
