@@ -54,7 +54,7 @@ def _cost_volume_block(c1, warp, search_range=2):
 
     cost_vol = []
     for i in range(0, max_offset):
-        slice = tf.slice(padded_lvl, [0, 0, i, 0], [-1, -1, width, -1])
+        slice = padded_lvl[:, :, i:width+i, :]
         cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
         cost_vol.append(cost)
 
@@ -63,6 +63,11 @@ def _cost_volume_block(c1, warp, search_range=2):
 
     return cost_curve
 
+def clip(x, clip_value_min, clip_value_max):
+    clipped = tf.cast(x < clip_value_min, x.dtype) * clip_value_min + tf.cast(x >= clip_value_min, x.dtype) * x
+    clipped = tf.cast(clipped > clip_value_max, x.dtype) * clip_value_max + tf.cast(clipped <= clip_value_max,
+                                                                                    x.dtype) * clipped
+    return clipped
 
 def bilinear_sampler(imgs, coords):
     """
@@ -114,10 +119,10 @@ def bilinear_sampler(imgs, coords):
     wt_y0 = y1 - coords_y
     wt_y1 = coords_y - y0
 
-    x0_safe = tf.clip_by_value(x0, zero[0], x_max)
-    y0_safe = tf.clip_by_value(y0, zero[0], y_max)
-    x1_safe = tf.clip_by_value(x1, zero[0], x_max)
-    y1_safe = tf.clip_by_value(y1, zero[0], y_max)
+    x0_safe = clip(x0, zero[0], x_max)
+    y0_safe = clip(y0, zero[0], y_max)
+    x1_safe = clip(x1, zero[0], x_max)
+    y1_safe = clip(y1, zero[0], y_max)
 
     ## indices in the flat image to sample from
     dim2 = tf.cast(inp_size[2], 'float32')
@@ -147,10 +152,12 @@ def bilinear_sampler(imgs, coords):
     w10 = wt_x1 * wt_y0
     w11 = wt_x1 * wt_y1
 
-    output = tf.add_n([
-        w00 * im00, w01 * im01,
-        w10 * im10, w11 * im11
-    ])
+    # output = tf.add_n([
+    #     w00 * im00, w01 * im01,
+    #     w10 * im10, w11 * im11
+    # ])
+    output = tf.add(tf.add(tf.multiply(w00, im00), tf.multiply(w01, im01)),
+                    tf.add(tf.multiply(w10, im10), tf.multiply(w11, im11)))
 
     return output
 
