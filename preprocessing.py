@@ -39,6 +39,9 @@ class StereoDatasetCreator():
             sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]
             )
         )
+
+        self.left_names_numpy = sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
+
         self.right_names = tf.constant(
             sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
         )
