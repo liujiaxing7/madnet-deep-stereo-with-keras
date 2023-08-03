@@ -342,6 +342,8 @@ def _custom_train_step(self, data):
             # Warp the right image into the left using final disparity
             warped_left = _warp_image_block(right_input, final_disparity)
             loss = self.compiled_loss(left_input, warped_left, sample_weight, regularization_losses=self.losses)
+            tf.summary.scalar('mean_ssim', self.loss.mean_ssim, step=self.optimizer.iterations)
+            tf.summary.scalar('sum_l1', self.loss.sum_l1, step=self.optimizer.iterations)
         else:
             loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
         # Perform reduction on the loss
