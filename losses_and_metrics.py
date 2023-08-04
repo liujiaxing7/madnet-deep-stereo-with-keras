@@ -110,7 +110,7 @@ class SSIMLoss(tf.keras.losses.Loss):
 
         mean_SSIM = tf.reduce_mean(SSIM)
 
-        sum_l1 = tf.reduce_sum(tf.abs(y_true - y_pred))
+        sum_l1 = tf.reduce_mean(tf.abs(y_true - y_pred))
         self.mean_ssim.assign(mean_SSIM)
         self.sum_l1.assign(sum_l1)
 
