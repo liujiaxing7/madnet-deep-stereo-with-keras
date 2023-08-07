@@ -5,13 +5,14 @@ import tensorflow as tf
 import argparse
 from madnet import MADNet, colorize_img
 from preprocessing import StereoDatasetCreator
-from losses_and_metrics import SSIMLoss
+from losses_and_metrics import SSIMLoss, EndPointError, Bad3
 import matplotlib.pyplot as plt
 import cv2
 
 parser = argparse.ArgumentParser(description='Script for inferencing MADNet')
 parser.add_argument("--left_dir", help='Path to left images folder', required=True)
 parser.add_argument("--right_dir", help='Path to right images folder', required=True)
+parser.add_argument("--disp_dir", help='path to left disparity maps folder', default=None, required=False)
 parser.add_argument("--num_adapt", help='Number of modules to adapt, needs to be an integer from 0-6',
                     default=0, type=int, required=False)
 parser.add_argument("--mad_mode", help='Module selection method for MAD adaptation. \n'
@@ -99,7 +100,7 @@ def WriteDepth(depth, limg, path, name, bf):
     predict_np = tf.squeeze(depth)
     predict_np = predict_np.numpy()
 
-    depth_img_float = bf / predict_np * 100  # to cm
+    depth_img_float = predict_np  #bf / predict_np * 100  # to cm
 
     # depth_img = ScaleDepth(depth_img_float, bits=2)
     # cv2.imwrite(output_gray, depth_img)
@@ -131,6 +132,7 @@ def WriteDepth(depth, limg, path, name, bf):
     cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
+    cv2.imwrite(output_gray, depth_img_float)
 
 def main(args):
     if args.output_path is None and args.num_adapt != 0:
@@ -161,11 +163,24 @@ def main(args):
         height=args.height,
         width=args.width,
         shuffle=False,
-        disp_dir=None
+        disp_dir=args.disp_dir
     )
     predict_ds = predict_dataset()
     # inference the dataset
     disparities = model.predict(predict_ds, steps=args.steps)
+    # from keras.engine import data_adapter
+    # inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(predict_ds)
+    if args.disp_dir is not None:
+        print(args.disp_dir + "/" +predict_dataset.disp_names_numpy[0])
+        gt = predict_dataset._get_disp(predict_dataset.disp_names_numpy[0])
+        epe = EndPointError()
+        epe.update_state(gt, disparities)
+        print("EPE: ", epe.result())
+
+        bad3 = Bad3()
+        bad3.update_state(gt, disparities)
+        print("Bad3: ", bad3.result())
+    # loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
 
     # View disparity predictions
     filenames = predict_dataset.left_names_numpy
