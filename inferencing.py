@@ -134,6 +134,45 @@ def WriteDepth(depth, limg, path, name, bf):
     cv2.imwrite(output_concat, concat)
     cv2.imwrite(output_gray, depth_img_float)
 
+
+def getAbsdiff(depth_map, disparity_map):
+    print(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
+    depth_map = np.squeeze(depth_map).astype("uint8")
+    disparity_map = cv2.imread(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
+    mask = np.where(disparity_map > 0, 255, 0).astype(np.uint8)
+
+    # 归一化数据范围
+    depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
+    disparity_map_norm = cv2.normalize(disparity_map, None, 0, 255, cv2.NORM_MINMAX)
+
+    # 计算深度图和视差图的差异
+    diff_map = cv2.absdiff(depth_map_norm, disparity_map_norm)
+    diff_map = cv2.bitwise_and(diff_map, mask)
+
+    # 可视化差异图像
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 3, 1)
+    plt.imshow(depth_map_norm, cmap='gray')
+    plt.title('Depth Map')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(disparity_map_norm, cmap='gray')
+    plt.title('Disparity Map')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(diff_map, cmap='jet')
+    plt.title('Difference Map')
+    plt.colorbar()
+    plt.axis('off')
+
+    diff_map1 = cv2.applyColorMap(diff_map, cv2.COLORMAP_JET)
+    cv2.imwrite("diff_map.png", diff_map1)
+
+    plt.tight_layout()
+    plt.show()
+
 def main(args):
     if args.output_path is None and args.num_adapt != 0:
         raise ValueError("No output_path provided for adaptation."
@@ -180,6 +219,8 @@ def main(args):
         bad3 = Bad3()
         bad3.update_state(gt, disparities)
         print("Bad3: ", bad3.result())
+
+        getAbsdiff(disparities, predict_dataset.disp_names_numpy[0])
     # loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
 
     # View disparity predictions
