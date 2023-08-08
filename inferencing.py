@@ -132,46 +132,62 @@ def WriteDepth(depth, limg, path, name, bf):
     cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
+    print("depth_img_float: ", depth_img_float)
     cv2.imwrite(output_gray, depth_img_float)
 
 
 def getAbsdiff(depth_map, disparity_map):
     print(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
-    depth_map = np.squeeze(depth_map).astype("uint8")
+    depth_map = tf.transpose(depth_map, perm=[0, 3, 1, 2])
+    predict_np = tf.squeeze(depth_map)
+    predict_np = predict_np.numpy()
+    depth_map = predict_np.astype("uint8")
+
+    print("depth map : ", depth_map)
+
     disparity_map = cv2.imread(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
     mask = np.where(disparity_map > 0, 255, 0).astype(np.uint8)
 
     # 归一化数据范围
-    depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
-    disparity_map_norm = cv2.normalize(disparity_map, None, 0, 255, cv2.NORM_MINMAX)
+    # depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
+    depth_map_norm = depth_map
+    # disparity_map_norm = cv2.normalize(disparity_map, None, 0, 255, cv2.NORM_MINMAX)
+    disparity_map_norm = disparity_map
+    # print("depth_map_norm: ", depth_map_norm)
 
     # 计算深度图和视差图的差异
     diff_map = cv2.absdiff(depth_map_norm, disparity_map_norm)
     diff_map = cv2.bitwise_and(diff_map, mask)
 
-    # 可视化差异图像
-    plt.figure(figsize=(12, 6))
-    plt.subplot(1, 3, 1)
-    plt.imshow(depth_map_norm, cmap='gray')
-    plt.title('Depth Map')
-    plt.axis('off')
+    # 计算深度图和视差图的差异
+    fig, axes = plt.subplots(3, 1, figsize=(6, 12))
+    # axes[0].subplot(1, 3, 1)
+    axes[0].imshow(depth_map_norm, cmap='gray')
+    axes[0].set_title('Depth Map')
+    axes[0].axis('off')
 
-    plt.subplot(1, 3, 2)
-    plt.imshow(disparity_map_norm, cmap='gray')
-    plt.title('Disparity Map')
-    plt.axis('off')
+    # axes[1].subplot(1, 3, 2)
+    axes[1].imshow(disparity_map_norm, cmap='gray')
+    axes[1].set_title('Disparity Map')
+    axes[1].axis('off')
 
-    plt.subplot(1, 3, 3)
-    plt.imshow(diff_map, cmap='jet')
-    plt.title('Difference Map')
-    plt.colorbar()
-    plt.axis('off')
+    # axes[2].subplot(1, 3, 3)
+    cax = axes[2].imshow(diff_map, cmap='jet')
+    axes[2].set_title('Difference Map')
+    # axes[2].colorbar()
+    axes[2].axis('off')
 
-    diff_map1 = cv2.applyColorMap(diff_map, cv2.COLORMAP_JET)
-    cv2.imwrite("diff_map.png", diff_map1)
+    # diff_map1 = cv2.cvt
+    # cv2.imwrite("diff_map.png", diff_map)
+    fig.subplots_adjust(hspace=0.05, wspace=0.05, top=0.95, bottom=0.05)
+    plt.colorbar(cax, ax=axes[2])
+
+    # 调整图像尺寸
+    fig.set_size_inches(10, 15)
 
     plt.tight_layout()
     plt.show()
+    plt.savefig("myplot.png")
 
 def main(args):
     if args.output_path is None and args.num_adapt != 0:

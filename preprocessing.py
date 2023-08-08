@@ -49,6 +49,7 @@ class StereoDatasetCreator():
             self.disp_names = tf.constant(
                 sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
             )
+            self.disp_names_numpy = sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
 
         # Check that there is a left image for every right image
         self.num_left = len(self.left_names)
