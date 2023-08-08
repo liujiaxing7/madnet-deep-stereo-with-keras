@@ -132,55 +132,60 @@ def WriteDepth(depth, limg, path, name, bf):
     cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
-    print("depth_img_float: ", depth_img_float)
     cv2.imwrite(output_gray, depth_img_float)
 
+def getAbsdiff(depth_map, disparity_map, path):
 
-def getAbsdiff(depth_map, disparity_map):
-    print(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
-    depth_map = tf.transpose(depth_map, perm=[0, 3, 1, 2])
-    predict_np = tf.squeeze(depth_map)
-    predict_np = predict_np.numpy()
-    depth_map = predict_np.astype("uint8")
-
+    depth_map = np.squeeze(depth_map)
     print("depth map : ", depth_map)
 
-    disparity_map = cv2.imread(args.disp_dir + '/' +disparity_map, cv2.IMREAD_GRAYSCALE)
-    mask = np.where(disparity_map > 0, 255, 0).astype(np.uint8)
+    disparity_map =np.squeeze(disparity_map)
+    print("disparity map: ", disparity_map)
+
+    mask = disparity_map > 0
 
     # 归一化数据范围
     # depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
     depth_map_norm = depth_map
+    depth_map_norm_mask = depth_map * mask
     # disparity_map_norm = cv2.normalize(disparity_map, None, 0, 255, cv2.NORM_MINMAX)
-    disparity_map_norm = disparity_map
+    disparity_map_norm = disparity_map * mask
     # print("depth_map_norm: ", depth_map_norm)
 
     # 计算深度图和视差图的差异
-    diff_map = cv2.absdiff(depth_map_norm, disparity_map_norm)
-    diff_map = cv2.bitwise_and(diff_map, mask)
+    # diff_map = cv2.absdiff(depth_map_norm_mask.astype("float32"), disparity_map_norm.astype("float32"))
+    diff_map = np.abs(depth_map_norm_mask.astype("float32") - disparity_map_norm.astype("float32"))
+    # diff_map = cv2.bitwise_and(diff_map, mask)
 
     # 计算深度图和视差图的差异
-    fig, axes = plt.subplots(3, 1, figsize=(6, 12))
+    fig, axes = plt.subplots(4, 1, figsize=(6, 12))
     # axes[0].subplot(1, 3, 1)
     axes[0].imshow(depth_map_norm, cmap='gray')
     axes[0].set_title('Depth Map')
     axes[0].axis('off')
+    cv2.imwrite(os.path.join(path, "depth_map_norm.png"), depth_map_norm)
+
+    axes[1].imshow(depth_map_norm_mask, cmap='gray')
+    axes[1].set_title('Depth Map Mask')
+    axes[1].axis('off')
+    cv2.imwrite(os.path.join(path, "depth_map_norm_mask.png"), depth_map_norm_mask)
 
     # axes[1].subplot(1, 3, 2)
-    axes[1].imshow(disparity_map_norm, cmap='gray')
-    axes[1].set_title('Disparity Map')
-    axes[1].axis('off')
+    axes[2].imshow(disparity_map_norm, cmap='gray')
+    axes[2].set_title('Disparity Map')
+    axes[2].axis('off')
+    cv2.imwrite(os.path.join(path, "disparity_map_norm.png"), disparity_map_norm)
 
     # axes[2].subplot(1, 3, 3)
-    cax = axes[2].imshow(diff_map, cmap='jet')
-    axes[2].set_title('Difference Map')
+    cax = axes[3].imshow(diff_map, cmap='jet')
+    axes[3].set_title('Difference Map')
     # axes[2].colorbar()
-    axes[2].axis('off')
+    axes[3].axis('off')
+    diff_map = cv2.applyColorMap(np.asarray(diff_map).astype("uint8"), cv2.COLORMAP_JET)
+    cv2.imwrite(os.path.join(path, "diff_map.png"), diff_map)
 
-    # diff_map1 = cv2.cvt
-    # cv2.imwrite("diff_map.png", diff_map)
     fig.subplots_adjust(hspace=0.05, wspace=0.05, top=0.95, bottom=0.05)
-    plt.colorbar(cax, ax=axes[2])
+    plt.colorbar(cax, ax=axes[3])
 
     # 调整图像尺寸
     fig.set_size_inches(10, 15)
@@ -225,18 +230,7 @@ def main(args):
     disparities = model.predict(predict_ds, steps=args.steps)
     # from keras.engine import data_adapter
     # inputs, gt, sample_weight = data_adapter.unpack_x_y_sample_weight(predict_ds)
-    if args.disp_dir is not None:
-        print(args.disp_dir + "/" +predict_dataset.disp_names_numpy[0])
-        gt = predict_dataset._get_disp(predict_dataset.disp_names_numpy[0])
-        epe = EndPointError()
-        epe.update_state(gt, disparities)
-        print("EPE: ", epe.result())
 
-        bad3 = Bad3()
-        bad3.update_state(gt, disparities)
-        print("Bad3: ", bad3.result())
-
-        getAbsdiff(disparities, predict_dataset.disp_names_numpy[0])
     # loss = self.compiled_loss(gt, final_disparity, sample_weight, regularization_losses=self.losses)
 
     # View disparity predictions
@@ -255,6 +249,21 @@ def main(args):
 
             disp = tf.transpose(disp, perm=[0,3,1,2])
             WriteDepth(disp, img, args.output_path, filenames[i], args.bf)
+
+            if args.disp_dir is not None:
+                print(args.disp_dir + "/" + predict_dataset.disp_names_numpy[i])
+                gt = predict_dataset._get_disp(predict_dataset.disp_names_numpy[i])
+                print("max pixel: ", np.max(gt.numpy()))
+                epe = EndPointError()
+                epe.update_state(gt, disparities)
+                print("EPE: ", epe.result())
+
+                bad3 = Bad3()
+                bad3.update_state(gt, disparities)
+                print("Bad3: ", bad3.result())
+
+                # getAbsdiff(disparities, predict_dataset.disp_names_numpy[0])
+                getAbsdiff(disparities, gt, args.output_path, filenames[i])
 
     # save the checkpoint and saved_model if it was updated
     if args.num_adapt != 0:
