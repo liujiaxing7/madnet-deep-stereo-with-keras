@@ -34,17 +34,22 @@ class StereoDatasetCreator():
         self.width = width
         self.shuffle = shuffle
         self.augment = augment
+        img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp']
 
+        left_dir = self.get_imgsList(left_dir)
         self.left_names = tf.constant(
-            sorted([name for name in os.listdir(left_dir) if os.path.isfile(f"{self.left_dir}/{name}")]
-            )
+            sorted([x.replace('/', os.sep) for x in left_dir if x.split('.')[-1].lower() in img_formats])
         )
+
+        right_dir = self.get_imgsList(right_dir)
         self.right_names = tf.constant(
-            sorted([name for name in os.listdir(right_dir) if os.path.isfile(f"{self.right_dir}/{name}")])
+            sorted([x.replace('/', os.sep) for x in right_dir if x.split('.')[-1].lower() in img_formats])
         )
+
         if self.disp_dir is not None:
+            disp_dir = self.get_imgsList(disp_dir)
             self.disp_names = tf.constant(
-                sorted([name for name in os.listdir(disp_dir) if os.path.isfile(f"{self.disp_dir}/{name}")])
+                sorted([x.replace('/', os.sep) for x in disp_dir if x.split('.')[-1].lower() in img_formats])
             )
 
         # Check that there is a left image for every right image
@@ -82,6 +87,15 @@ class StereoDatasetCreator():
             image = tf.image.random_saturation(image, 0.6, 1.6)
             image = tf.image.random_contrast(image, 0.7, 1.3)
         return image
+
+    def get_imgsList(self, file):
+        file_list = []
+        with open(file, 'r') as file_r:
+            lines = file_r.readlines()
+            for line in lines:
+                value = line.strip()
+                file_list.append(value)
+        return file_list
 
     def readPFM(self, file):
         """
@@ -191,8 +205,8 @@ class StereoDatasetCreator():
         """
         left_name = self.left_names[index]
         right_name = self.right_names[index]
-        left_image = self._get_image(f"{self.left_dir}/" + left_name)
-        right_image = self._get_image(f"{self.right_dir}/" + right_name)
+        left_image = self._get_image(left_name)
+        right_image = self._get_image(right_name)
 
         disp_map = None  
         if self.disp_dir is not None:
